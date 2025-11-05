@@ -2,7 +2,7 @@
 
 AI-powered social media content generator that creates viral-worthy posts in seconds.
 
-![Sparklio Demo](https://via.placeholder.com/800x400.png?text=Sparklio+Demo)
+![Sparklio Demo]
 
 ## 🚀 Features
 
@@ -54,6 +54,6 @@ MIT License - feel free to use this project for learning!
 
 ## 📧 Contact
 
-Your Name - Jiya Jain
-
+Name - Jiya Jain
+Linkedln - www.linkedin.com/in/jiya-jain-537501324
 Project Link: [https://github.com/Jiya10011/sparklio](https://github.com/Jiya10011/sparklio)
