@@ -172,7 +172,7 @@ Return JSON:
 
     // 🧠 Generate content (with retry)
     const resultText = await retryWithBackoff(async () => {
-      const model = genAI.getGenerativeModel({ model: "gemini-2.0-pro" });
+      const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
       const response = await model.generateContent(prompt);
       return await response.response.text();
     });
