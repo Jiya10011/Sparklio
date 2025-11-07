@@ -6,7 +6,7 @@ import { generateContent } from '../services/geminiService';
 import { generateImage } from '../services/imageService';
 import { getUserApiKey } from '../services/userApiKeyService';
 import ApiKeySetupModal from './ApiKeySetupModal';
-import { LogIn, LogOut, Menu, History, ChevronDown } from 'lucide-react';
+import { LogIn, LogOut, Menu, History, ChevronDown, X } from 'lucide-react';
 
 function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
   // State management
@@ -59,9 +59,9 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
     { id: 'thumbnail', label: 'Thumbnail Idea', desc: 'Text concepts' }
   ];
 
-  // Character counter - UPDATED TO 300
+  // Character counter - FIXED: Now 300 characters
   const characterCount = topic.length;
-  const maxCharacters = 300; // CHANGED FROM 100 TO 300
+  const maxCharacters = 300;
 
   // Check auth & API key on mount
   useEffect(() => {
@@ -103,17 +103,25 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
     }
   };
 
-  // Handle Sign Out
+  // Handle Sign Out - FIXED
   const handleSignOut = async () => {
     try {
+      setShowUserMenu(false); // Close menu first
       await signOut(auth);
       setUser(null);
       setHasApiKey(false);
-      setShowUserMenu(false);
       console.log('👋 Signed out successfully');
     } catch (error) {
       console.error('❌ Sign out error:', error);
       setError('Failed to sign out. Please try again.');
+    }
+  };
+
+  // Handle View History - FIXED
+  const handleViewHistory = () => {
+    setShowUserMenu(false); // Close menu first
+    if (onViewHistory) {
+      onViewHistory();
     }
   };
 
@@ -127,7 +135,7 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
       return;
     }
 
-    // Input validation
+    // Input validation - FIXED: Now checks for 300 characters
     if (!topic.trim()) {
       setError('Please enter a topic! ✨');
       return;
@@ -138,8 +146,8 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
       return;
     }
 
-    if (topic.length > 300) {
-      setError('Topic too long - keep it under 300 characters');
+    if (topic.length > maxCharacters) {
+      setError(`Topic too long - keep it under ${maxCharacters} characters`);
       return;
     }
 
@@ -147,8 +155,8 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
     console.log('🚀 Starting generation...');
 
     try {
-      // Step 1: Generate 5 variations of text content (CHANGED FROM 3 TO 5)
-      setLoadingMessage('🎯 Crafting viral hooks...');
+      // Step 1: Generate 5 variations of text content
+      setLoadingMessage('🎯 Crafting 5 viral variations...');
       console.log('📝 Step 1: Generating 5 content variations...');
 
       // Generate 5 variations in parallel
@@ -157,7 +165,7 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
         generateContent(topic, platform, style, youtubeType, user.uid),
         generateContent(topic, platform, style, youtubeType, user.uid),
         generateContent(topic, platform, style, youtubeType, user.uid),
-        generateContent(topic, platform, style, youtubeType, user.uid) // ADDED 2 MORE
+        generateContent(topic, platform, style, youtubeType, user.uid)
       ]);
 
       console.log('✅ All 5 variations generated');
@@ -175,7 +183,6 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
       setLoadingMessage('✨ Finalizing your content...');
 
       const result = {
-        // Format expected by ResultsDisplay
         variations: contentVariations.map((content, index) => ({
           ...content,
           id: `variation-${index + 1}`,
@@ -249,18 +256,6 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
     }
   };
 
-  // Close user menu when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (showUserMenu && !event.target.closest('.user-menu-container')) {
-        setShowUserMenu(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showUserMenu]);
-
   return (
     <div className="min-h-screen bg-dark-bg relative overflow-hidden">
       {/* Animated Background */}
@@ -268,6 +263,14 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
         <div className="absolute top-20 left-10 w-64 h-64 bg-spark-orange/10 rounded-full blur-3xl animate-pulse"></div>
         <div className="absolute bottom-20 right-10 w-80 h-80 bg-frame-purple/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '700ms' }}></div>
       </div>
+
+      {/* Overlay for closing menu - FIXED */}
+      {showUserMenu && (
+        <div 
+          className="fixed inset-0 z-40" 
+          onClick={() => setShowUserMenu(false)}
+        ></div>
+      )}
 
       {/* Header */}
       <div className="relative z-10 border-b border-gray-800 bg-dark-surface/50 backdrop-blur-md sticky top-0">
@@ -290,11 +293,11 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
           {/* User Info / Sign In */}
           <div className="flex items-center gap-3">
             {user ? (
-              <div className="relative user-menu-container">
+              <div className="relative">
                 {/* User Menu Button */}
                 <button
                   onClick={() => setShowUserMenu(!showUserMenu)}
-                  className="flex items-center gap-2 bg-gray-800/50 hover:bg-gray-700/50 px-3 py-2 rounded-lg transition-all"
+                  className="flex items-center gap-2 bg-gray-800/50 hover:bg-gray-700/50 px-3 py-2 rounded-lg transition-all relative z-50"
                 >
                   {user.photoURL && (
                     <img
@@ -306,13 +309,13 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
                   <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${showUserMenu ? 'rotate-180' : ''}`} />
                 </button>
 
-                {/* Dropdown Menu */}
+                {/* Dropdown Menu - FIXED with higher z-index */}
                 {showUserMenu && (
                   <div className="absolute right-0 mt-2 w-64 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl overflow-hidden z-[100]">
                     {/* User Info */}
                     <div className="p-4 border-b border-gray-700">
                       <p className="text-white font-medium truncate">{user.displayName || user.email}</p>
-                      <p className="text-gray-400 text-sm truncate">{user.email}</p>
+                      <p className="text-gray-400 text-sm truncate mt-1">{user.email}</p>
                       
                       {/* API Key Status */}
                       <div className="mt-3 flex items-center justify-between">
@@ -324,7 +327,8 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
                           </span>
                         ) : (
                           <button
-                            onClick={() => {
+                            onClick={(e) => {
+                              e.stopPropagation();
                               setShowApiKeyModal(true);
                               setShowUserMenu(false);
                             }}
@@ -336,27 +340,18 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
                       </div>
                     </div>
 
-                    {/* Menu Items */}
+                    {/* Menu Items - FIXED: Added onClick handlers */}
                     <div className="py-2">
-                      {onViewHistory && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setShowUserMenu(false);
-                            onViewHistory();
-                          }}
-                          className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-800 transition-colors text-left"
-                        >
-                          <History className="w-4 h-4 text-gray-400" />
-                          <span className="text-white text-sm">View History</span>
-                        </button>
-                      )}
+                      <button
+                        onClick={handleViewHistory}
+                        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-800 transition-colors text-left"
+                      >
+                        <History className="w-4 h-4 text-gray-400" />
+                        <span className="text-white text-sm">View History</span>
+                      </button>
 
                       <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleSignOut();
-                        }}
+                        onClick={handleSignOut}
                         className="w-full flex items-center gap-3 px-4 py-3 hover:bg-red-500/10 transition-colors text-left text-red-400"
                       >
                         <LogOut className="w-4 h-4" />
@@ -440,8 +435,8 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
               value={topic}
               onChange={(e) => setTopic(e.target.value.slice(0, maxCharacters))}
               onKeyPress={handleKeyPress}
-              placeholder="Describe your content idea... (e.g., '10 sustainable fashion tips for beginners')"
-              rows="4"
+              placeholder="Describe your content idea in detail... (up to 300 characters - that's about 50-60 words!)"
+              rows="5"
               className="w-full bg-gray-900/50 border-2 border-gray-700 rounded-xl px-5 py-4 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-spark-orange focus:border-transparent transition-all resize-none"
               disabled={loading || !user}
             />
@@ -451,6 +446,11 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
               </span>
             </div>
           </div>
+
+          {/* Helpful hint */}
+          <p className="text-xs text-gray-500 mt-2">
+            💡 Tip: Be specific! Include your target audience, tone, and key message for best results.
+          </p>
 
           {/* Trending Topics */}
           <div className="mt-4">
@@ -612,7 +612,7 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
             )}
           </p>
           <p className="text-gray-600 text-xs mt-2">
-            💡 Tip: Press Enter to generate instantly • Now with 5 variations!
+            💡 Up to 300 characters (≈50-60 words) • Press Enter to generate • 5 variations per generation
           </p>
         </div>
       </div>
