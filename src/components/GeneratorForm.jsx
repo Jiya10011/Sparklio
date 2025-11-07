@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { auth } from '../config/firebase';
 import { signInWithPopup, signOut } from 'firebase/auth';
 import { googleProvider } from '../config/firebase';
@@ -6,7 +6,7 @@ import { generateContent } from '../services/geminiService';
 import { generateImage } from '../services/imageService';
 import { getUserApiKey } from '../services/userApiKeyService';
 import ApiKeySetupModal from './ApiKeySetupModal';
-import { LogIn, LogOut, Menu, History, ChevronDown, X } from 'lucide-react';
+import { LogIn, LogOut, Menu, History, ChevronDown, X, User } from 'lucide-react';
 
 function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
   // State management
@@ -59,7 +59,7 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
     { id: 'thumbnail', label: 'Thumbnail Idea', desc: 'Text concepts' }
   ];
 
-  // Character counter - FIXED: Now 300 characters
+  // Character counter
   const characterCount = topic.length;
   const maxCharacters = 300;
 
@@ -94,7 +94,6 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
       setHasApiKey(keyResult.success);
       
       if (!keyResult.success) {
-        // Show API key setup modal
         setShowApiKeyModal(true);
       }
     } catch (error) {
@@ -103,10 +102,10 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
     }
   };
 
-  // Handle Sign Out - FIXED
+  // Handle Sign Out
   const handleSignOut = async () => {
     try {
-      setShowUserMenu(false); // Close menu first
+      setShowUserMenu(false);
       await signOut(auth);
       setUser(null);
       setHasApiKey(false);
@@ -117,9 +116,9 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
     }
   };
 
-  // Handle View History - FIXED
+  // Handle View History
   const handleViewHistory = () => {
-    setShowUserMenu(false); // Close menu first
+    setShowUserMenu(false);
     if (onViewHistory) {
       onViewHistory();
     }
@@ -129,13 +128,11 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
   const handleGenerate = async () => {
     setError(null);
 
-    // Check if user is signed in
     if (!user) {
       setError('Please sign in to generate content');
       return;
     }
 
-    // Input validation - FIXED: Now checks for 300 characters
     if (!topic.trim()) {
       setError('Please enter a topic! ✨');
       return;
@@ -155,11 +152,9 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
     console.log('🚀 Starting generation...');
 
     try {
-      // Step 1: Generate 5 variations of text content
       setLoadingMessage('🎯 Crafting 5 viral variations...');
       console.log('📝 Step 1: Generating 5 content variations...');
 
-      // Generate 5 variations in parallel
       const contentVariations = await Promise.all([
         generateContent(topic, platform, style, youtubeType, user.uid),
         generateContent(topic, platform, style, youtubeType, user.uid),
@@ -171,7 +166,6 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
       console.log('✅ All 5 variations generated');
       await new Promise(resolve => setTimeout(resolve, 500));
 
-      // Step 2: Generate image for the first variation
       setLoadingMessage('🎨 Generating image concepts...');
       console.log('🎨 Step 2: Generating image...');
 
@@ -179,7 +173,6 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
       console.log('✅ Image generated:', imageUrl);
       await new Promise(resolve => setTimeout(resolve, 500));
 
-      // Step 3: Prepare final result with variations
       setLoadingMessage('✨ Finalizing your content...');
 
       const result = {
@@ -197,13 +190,10 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
         id: `sparklio-${Date.now()}`
       };
 
-      // Save to localStorage history
       saveToHistory(result);
 
       console.log('🎉 Generation complete!');
-      console.log('Result with 5 variations:', result);
 
-      // Show results
       if (onResultsGenerated) {
         onResultsGenerated(result);
       }
@@ -213,7 +203,6 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
     } catch (error) {
       console.error('❌ Generation failed:', error);
       
-      // Handle special error: needs API key
       if (error.message === 'NEED_API_KEY') {
         setShowApiKeyModal(true);
         setError('Please add your Gemini API key to continue');
@@ -264,14 +253,6 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
         <div className="absolute bottom-20 right-10 w-80 h-80 bg-frame-purple/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '700ms' }}></div>
       </div>
 
-      {/* Overlay for closing menu - FIXED */}
-      {showUserMenu && (
-        <div 
-          className="fixed inset-0 z-40" 
-          onClick={() => setShowUserMenu(false)}
-        ></div>
-      )}
-
       {/* Header */}
       <div className="relative z-10 border-b border-gray-800 bg-dark-surface/50 backdrop-blur-md sticky top-0">
         <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
@@ -293,74 +274,21 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
           {/* User Info / Sign In */}
           <div className="flex items-center gap-3">
             {user ? (
-              <div className="relative">
-                {/* User Menu Button */}
-                <button
-                  onClick={() => setShowUserMenu(!showUserMenu)}
-                  className="flex items-center gap-2 bg-gray-800/50 hover:bg-gray-700/50 px-3 py-2 rounded-lg transition-all relative z-50"
-                >
-                  {user.photoURL && (
-                    <img
-                      src={user.photoURL}
-                      alt="Profile"
-                      className="w-8 h-8 rounded-full border-2 border-spark-orange"
-                    />
-                  )}
-                  <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${showUserMenu ? 'rotate-180' : ''}`} />
-                </button>
-
-                {/* Dropdown Menu - FIXED with higher z-index */}
-                {showUserMenu && (
-                  <div className="absolute right-0 mt-2 w-64 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl overflow-hidden z-[100]">
-                    {/* User Info */}
-                    <div className="p-4 border-b border-gray-700">
-                      <p className="text-white font-medium truncate">{user.displayName || user.email}</p>
-                      <p className="text-gray-400 text-sm truncate mt-1">{user.email}</p>
-                      
-                      {/* API Key Status */}
-                      <div className="mt-3 flex items-center justify-between">
-                        <span className="text-xs text-gray-400">API Key:</span>
-                        {hasApiKey ? (
-                          <span className="text-xs text-green-400 flex items-center gap-1">
-                            <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
-                            Connected
-                          </span>
-                        ) : (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setShowApiKeyModal(true);
-                              setShowUserMenu(false);
-                            }}
-                            className="text-xs text-orange-400 hover:text-orange-300 transition-colors"
-                          >
-                            Add Key
-                          </button>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Menu Items - FIXED: Added onClick handlers */}
-                    <div className="py-2">
-                      <button
-                        onClick={handleViewHistory}
-                        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-800 transition-colors text-left"
-                      >
-                        <History className="w-4 h-4 text-gray-400" />
-                        <span className="text-white text-sm">View History</span>
-                      </button>
-
-                      <button
-                        onClick={handleSignOut}
-                        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-red-500/10 transition-colors text-left text-red-400"
-                      >
-                        <LogOut className="w-4 h-4" />
-                        <span className="text-sm">Sign Out</span>
-                      </button>
-                    </div>
-                  </div>
+              <button
+                onClick={() => setShowUserMenu(true)}
+                className="flex items-center gap-2 bg-gray-800/50 hover:bg-gray-700/50 px-3 py-2 rounded-lg transition-all"
+              >
+                {user.photoURL ? (
+                  <img
+                    src={user.photoURL}
+                    alt="Profile"
+                    className="w-8 h-8 rounded-full border-2 border-spark-orange"
+                  />
+                ) : (
+                  <User className="w-6 h-6 text-gray-400" />
                 )}
-              </div>
+                <Menu className="w-4 h-4 text-gray-400" />
+              </button>
             ) : (
               <button
                 onClick={handleGoogleSignIn}
@@ -373,6 +301,111 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
           </div>
         </div>
       </div>
+
+      {/* MODAL-STYLE USER MENU - Always on top! */}
+      {showUserMenu && (
+        <>
+          {/* Backdrop */}
+          <div 
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9998]"
+            onClick={() => setShowUserMenu(false)}
+          ></div>
+
+          {/* Menu Panel - Slides in from right like a sidebar */}
+          <div className="fixed top-0 right-0 h-full w-80 bg-gray-900 shadow-2xl z-[9999] animate-slide-in-right border-l border-gray-700">
+            {/* Header */}
+            <div className="p-6 border-b border-gray-700 flex items-center justify-between">
+              <h3 className="text-xl font-bold text-white">Account</h3>
+              <button
+                onClick={() => setShowUserMenu(false)}
+                className="p-2 hover:bg-gray-800 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-400" />
+              </button>
+            </div>
+
+            {/* User Info Section */}
+            <div className="p-6 border-b border-gray-700">
+              <div className="flex items-start gap-4">
+                {user.photoURL ? (
+                  <img
+                    src={user.photoURL}
+                    alt="Profile"
+                    className="w-16 h-16 rounded-full border-2 border-spark-orange"
+                  />
+                ) : (
+                  <div className="w-16 h-16 rounded-full bg-gray-800 flex items-center justify-center">
+                    <User className="w-8 h-8 text-gray-400" />
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="text-white font-semibold text-lg truncate">{user.displayName || 'User'}</p>
+                  <p className="text-gray-400 text-sm truncate">{user.email}</p>
+                </div>
+              </div>
+
+              {/* API Key Status */}
+              <div className="mt-4 p-3 bg-gray-800/50 rounded-lg">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-400">API Key Status</span>
+                  {hasApiKey ? (
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
+                      <span className="text-sm text-green-400 font-medium">Connected</span>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        setShowApiKeyModal(true);
+                        setShowUserMenu(false);
+                      }}
+                      className="text-sm text-orange-400 hover:text-orange-300 transition-colors font-medium"
+                    >
+                      Add Key →
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Menu Items */}
+            <div className="p-4">
+              <button
+                onClick={handleViewHistory}
+                className="w-full flex items-center gap-4 px-4 py-4 hover:bg-gray-800 rounded-xl transition-all text-left group"
+              >
+                <div className="w-10 h-10 bg-blue-500/20 rounded-lg flex items-center justify-center group-hover:bg-blue-500/30 transition-colors">
+                  <History className="w-5 h-5 text-blue-400" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-white font-medium">View History</p>
+                  <p className="text-gray-400 text-xs">See your past generations</p>
+                </div>
+              </button>
+
+              <button
+                onClick={handleSignOut}
+                className="w-full flex items-center gap-4 px-4 py-4 hover:bg-red-500/10 rounded-xl transition-all text-left group mt-2"
+              >
+                <div className="w-10 h-10 bg-red-500/20 rounded-lg flex items-center justify-center group-hover:bg-red-500/30 transition-colors">
+                  <LogOut className="w-5 h-5 text-red-400" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-red-400 font-medium">Sign Out</p>
+                  <p className="text-gray-400 text-xs">Logout from your account</p>
+                </div>
+              </button>
+            </div>
+
+            {/* Footer */}
+            <div className="absolute bottom-0 left-0 right-0 p-6 border-t border-gray-700">
+              <p className="text-xs text-gray-500 text-center">
+                Sparklio v1.0 • Made with ✨
+              </p>
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Main Content */}
       <div className="relative z-10 max-w-4xl mx-auto px-4 py-8">
@@ -405,7 +438,7 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
           </div>
         )}
 
-        {/* Sign In Prompt (if not signed in) */}
+        {/* Sign In Prompt */}
         {!user && !checkingAuth && (
           <div className="mb-6 bg-blue-500/10 border border-blue-500/30 rounded-xl p-6 text-center">
             <div className="text-4xl mb-3">🔐</div>
@@ -447,7 +480,6 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
             </div>
           </div>
 
-          {/* Helpful hint */}
           <p className="text-xs text-gray-500 mt-2">
             💡 Tip: Be specific! Include your target audience, tone, and key message for best results.
           </p>
@@ -624,8 +656,23 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
         userId={user?.uid}
         onSuccess={handleApiKeySuccess}
       />
+
+      <style jsx>{`
+        @keyframes slide-in-right {
+          from {
+            transform: translateX(100%);
+          }
+          to {
+            transform: translateX(0);
+          }
+        }
+        
+        .animate-slide-in-right {
+          animation: slide-in-right 0.3s ease-out;
+        }
+      `}</style>
     </div>
   );
 }
 
-export default GeneratorForm;
+export default GeneratorForm
