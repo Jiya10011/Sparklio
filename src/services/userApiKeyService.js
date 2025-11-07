@@ -8,7 +8,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
  */
 export async function saveUserApiKey(userId, apiKey) {
   const { valid, error } = validateApiKeyFormat(apiKey);
-  if (!valid) throw new Error(error);
+  if (!valid) return { success: false, error };
 
   try {
     const encryptedKey = encryptApiKey(apiKey);
@@ -18,10 +18,10 @@ export async function saveUserApiKey(userId, apiKey) {
     });
 
     console.log("✅ API key saved successfully for user:", userId);
-    return true;
+    return { success: true };
   } catch (err) {
     console.error("❌ Error saving API key:", err);
-    throw new Error("Failed to save API key.");
+    return { success: false, error: "Failed to save API key." };
   }
 }
 
@@ -34,17 +34,17 @@ export async function getUserApiKey(userId) {
     const snapshot = await getDoc(docRef);
 
     if (!snapshot.exists()) {
-      throw new Error("No API key found for this user.");
+      return { success: false, error: "No API key found for this user." };
     }
 
     const encryptedKey = snapshot.data().encryptedApiKey;
     const decryptedKey = decryptApiKey(encryptedKey);
 
     if (!decryptedKey) throw new Error("Failed to decrypt API key.");
-    return decryptedKey;
+    return { success: true, apiKey: decryptedKey };
   } catch (err) {
     console.error("❌ Error fetching API key:", err);
-    throw err;
+    return { success: false, error: err.message };
   }
 }
 
@@ -53,10 +53,10 @@ export async function getUserApiKey(userId) {
  * Supports fallback from Gemini 2.5 → 1.5 if necessary
  */
 export async function verifyUserApiKey(apiKey) {
-  try {
-    const { valid, error } = validateApiKeyFormat(apiKey);
-    if (!valid) throw new Error(error);
+  const { valid, error } = validateApiKeyFormat(apiKey);
+  if (!valid) return { success: false, error };
 
+  try {
     const genAI = new GoogleGenerativeAI(apiKey);
 
     // Try Gemini 2.5 first
@@ -65,7 +65,7 @@ export async function verifyUserApiKey(apiKey) {
       const test = await model.generateContent("Test");
       if (test.response && test.response.text()) {
         console.log("✅ API key verified for gemini-2.5-pro");
-        return true;
+        return { success: true };
       }
     } catch (primaryError) {
       console.warn("⚠️ gemini-2.5-pro verification failed:", primaryError.message);
@@ -75,14 +75,14 @@ export async function verifyUserApiKey(apiKey) {
       const fallbackTest = await fallbackModel.generateContent("Test");
       if (fallbackTest.response && fallbackTest.response.text()) {
         console.log("✅ API key verified for gemini-1.5-pro (fallback)");
-        return true;
+        return { success: true };
       }
     }
 
-    throw new Error("Could not verify API key. Try regenerating it in Google AI Studio.");
+    return { success: false, error: "Could not verify API key. Try regenerating it in Google AI Studio." };
   } catch (err) {
     console.error("❌ API key verification error:", err);
-    throw err;
+    return { success: false, error: "Verification failed. Please check your key." };
   }
 }
 
@@ -98,10 +98,10 @@ export async function updateApiKeyStatus(userId, status, reason = "") {
       updatedAt: new Date().toISOString(),
     });
     console.log(`✅ API key status updated to "${status}"`);
-    return true;
+    return { success: true };
   } catch (err) {
     console.error("❌ Failed to update API key status:", err);
-    return false;
+    return { success: false, error: err.message };
   }
 }
 
