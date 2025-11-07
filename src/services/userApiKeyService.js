@@ -1,7 +1,5 @@
-import { doc, setDoc, getDoc } from "firebase/firestore";
-import { db } from '../config/firebase';
-
-
+import { doc, setDoc, getDoc, updateDoc } from "firebase/firestore";
+import { db } from "../config/firebase";
 import { encryptApiKey, decryptApiKey, validateApiKeyFormat } from "./encryptionService";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
@@ -87,3 +85,32 @@ export async function verifyUserApiKey(apiKey) {
     throw err;
   }
 }
+
+/**
+ * Update API key status (for tracking usage/errors)
+ */
+export async function updateApiKeyStatus(userId, status, reason = "") {
+  try {
+    const userRef = doc(db, "users", userId);
+    await updateDoc(userRef, {
+      apiKeyStatus: status,
+      apiKeyStatusReason: reason,
+      updatedAt: new Date().toISOString(),
+    });
+    console.log(`✅ API key status updated to "${status}"`);
+    return true;
+  } catch (err) {
+    console.error("❌ Failed to update API key status:", err);
+    return false;
+  }
+}
+
+/**
+ * Export for named + default imports
+ */
+export default {
+  saveUserApiKey,
+  getUserApiKey,
+  verifyUserApiKey,
+  updateApiKeyStatus,
+};
