@@ -231,7 +231,7 @@ export async function testConnection() {
     const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
     if (!apiKey) return false;
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-2.0-pro" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
     const response = await model.generateContent("Say 'connected'");
     const text = await response.response.text();
     return text.toLowerCase().includes("connect");

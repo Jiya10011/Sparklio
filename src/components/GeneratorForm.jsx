@@ -126,8 +126,8 @@ function GeneratorForm({ onBack, onResultsGenerated }) {
       return;
     }
 
-    if (topic.length > 100) {
-      setError('Topic too long - keep it under 100 characters');
+    if (topic.length > 200) {
+      setError('Topic too long - keep it under 200 characters');
       return;
     }
 
