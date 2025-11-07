@@ -308,7 +308,7 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
 
                 {/* Dropdown Menu */}
                 {showUserMenu && (
-                  <div className="absolute right-0 mt-2 w-64 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl overflow-hidden z-50">
+                  <div className="absolute right-0 mt-2 w-64 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl overflow-hidden z-[100]">
                     {/* User Info */}
                     <div className="p-4 border-b border-gray-700">
                       <p className="text-white font-medium truncate">{user.displayName || user.email}</p>
@@ -340,9 +340,10 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
                     <div className="py-2">
                       {onViewHistory && (
                         <button
-                          onClick={() => {
-                            onViewHistory();
+                          onClick={(e) => {
+                            e.stopPropagation();
                             setShowUserMenu(false);
+                            onViewHistory();
                           }}
                           className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-800 transition-colors text-left"
                         >
@@ -352,7 +353,10 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
                       )}
 
                       <button
-                        onClick={handleSignOut}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleSignOut();
+                        }}
                         className="w-full flex items-center gap-3 px-4 py-3 hover:bg-red-500/10 transition-colors text-left text-red-400"
                       >
                         <LogOut className="w-4 h-4" />
