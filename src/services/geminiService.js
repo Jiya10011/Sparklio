@@ -1,9 +1,7 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { getUserApiKey, updateApiKeyStatus } from './userApiKeyService';
 
-// Initialize Gemini AI
-const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY);
-
-// Retry logic with exponential backoff
+// Retry logic wrapper
 async function retryWithBackoff(fn, maxRetries = 3) {
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
@@ -15,7 +13,6 @@ async function retryWithBackoff(fn, maxRetries = 3) {
         throw error;
       }
       
-      // Exponential backoff: 1s, 2s, 4s
       const delay = Math.pow(2, attempt) * 1000;
       console.log(`🔄 Retry attempt ${attempt + 1} after ${delay}ms...`);
       await new Promise(resolve => setTimeout(resolve, delay));
@@ -28,59 +25,59 @@ const platformGuidelines = {
   instagram: {
     hookStyle: "visual, aspirational, use emojis sparingly",
     captionLength: "3-4 sentences, conversational and authentic",
-    hashtagCount: "8-10 mix of popular (100K+) and niche (10-50K)",
+    hashtagCount: "8-10 mix of popular and niche",
     tone: "friendly, authentic, relatable, aesthetic"
   },
   linkedin: {
     hookStyle: "thought-provoking, professional, data-driven",
     captionLength: "4-5 sentences, value-focused with insights",
-    hashtagCount: "3-5 professional, industry-specific hashtags",
-    tone: "authoritative, insightful, professional, credible"
+    hashtagCount: "3-5 professional hashtags",
+    tone: "authoritative, insightful, professional"
   },
   twitter: {
     hookStyle: "punchy, controversial, thread-worthy",
     captionLength: "2-3 sentences, concise and direct",
-    hashtagCount: "2-3 trending, relevant hashtags",
-    tone: "conversational, witty, direct, engaging"
+    hashtagCount: "2-3 trending hashtags",
+    tone: "conversational, witty, direct"
   },
   youtube: {
     hookStyle: "curiosity-gap, clickable, benefit-driven",
-    captionLength: "3-4 sentences with clear call-to-action",
-    hashtagCount: "5-8 SEO-focused, searchable hashtags",
-    tone: "engaging, enthusiastic, searchable, actionable"
+    captionLength: "3-4 sentences with call-to-action",
+    hashtagCount: "5-8 SEO-focused hashtags",
+    tone: "engaging, enthusiastic, searchable"
   }
 };
 
-// Style-specific guidelines
+// Style guidelines
 const styleGuidelines = {
-  minimal: "clean, simple, lots of white space, understated elegance, modern, less is more",
-  bold: "high contrast, striking colors, dramatic, attention-grabbing, powerful, impactful",
-  professional: "corporate, structured, credible, polished, business-ready, sophisticated",
-  aesthetic: "dreamy, Pinterest-worthy, soft pastels, visually pleasing, artistic, curated",
-  vibrant: "colorful, energetic, playful, dynamic, eye-catching, fun and lively"
+  minimal: "clean, simple, lots of white space, understated elegance",
+  bold: "high contrast, striking, dramatic, attention-grabbing",
+  professional: "corporate, structured, credible, polished",
+  aesthetic: "dreamy, Pinterest-worthy, soft, visually pleasing",
+  vibrant: "colorful, energetic, playful, dynamic"
 };
 
-// YouTube content type specifications
+// YouTube content types
 const youtubeContentTypes = {
   short: {
-    format: "YouTube Short (60 seconds or less)",
-    hookStyle: "Immediate attention grab, first 3 seconds critical",
-    length: "Very concise, punchy, fast-paced"
+    format: "YouTube Short (60 seconds)",
+    hookStyle: "Immediate grab, first 3 seconds critical",
+    length: "Very concise, fast-paced"
   },
   title: {
     format: "Video Title",
-    hookStyle: "Clickable, curiosity-gap, benefit-driven",
-    length: "50-60 characters optimal"
+    hookStyle: "Clickable, curiosity-gap",
+    length: "50-60 characters"
   },
   description: {
     format: "Video Description",
-    hookStyle: "SEO-optimized, informative, keyword-rich",
-    length: "150-200 words with timestamps and links"
+    hookStyle: "SEO-optimized, keyword-rich",
+    length: "150-200 words"
   },
   thumbnail: {
     format: "Thumbnail Concept",
-    hookStyle: "Visual idea with text overlay suggestion",
-    length: "Describe imagery, colors, text placement"
+    hookStyle: "Visual idea with text overlay",
+    length: "Describe imagery and text"
   }
 };
 
@@ -88,62 +85,53 @@ const youtubeContentTypes = {
 function generateFallbackContent(topic, platform, style) {
   const hooks = {
     instagram: `✨ ${topic} - here's what you need to know`,
-    linkedin: `After researching ${topic}, here are the key insights:`,
+    linkedin: `After researching ${topic}, here are key insights:`,
     twitter: `Hot take on ${topic}: 🧵`,
-    youtube: `Everything you need to know about ${topic}`
+    youtube: `Everything about ${topic}`
   };
 
   const captions = {
-    instagram: `Sharing my journey with ${topic}. Swipe for insights! What's your experience? Drop a comment below 👇 Let's discuss!`,
-    linkedin: `${topic} is becoming increasingly important in today's landscape. Here's what I've learned after extensive research and why it matters for your business growth.`,
-    twitter: `Let's talk about ${topic}. Here's what most people completely miss (and why it matters)...`,
-    youtube: `In this video, I'm breaking down ${topic} in a way that's easy to understand. Watch till the end for the best actionable tip!`
+    instagram: `Sharing insights about ${topic}. What's your experience? Drop a comment! 👇`,
+    linkedin: `${topic} is increasingly important. Here's what matters for your business.`,
+    twitter: `Let's talk ${topic}. Here's what most people miss...`,
+    youtube: `Breaking down ${topic} in an easy way. Watch till the end!`
   };
 
   const topicWords = topic.toLowerCase().split(' ').slice(0, 2);
-  const baseHashtags = [...topicWords, platform, style, 'content', 'socialmedia', 'viral', 'trending'];
+  const baseHashtags = [...topicWords, platform, style, 'content', 'trending', 'viral'];
 
   return {
     hook: hooks[platform] || hooks.instagram,
     caption: captions[platform] || captions.instagram,
     hashtags: baseHashtags.slice(0, 8),
-    stylePrompt: `${style} style, ${platform} optimized, modern aesthetic, ${topic} themed, high quality visual`
+    stylePrompt: `${style} style, ${platform} optimized, modern aesthetic, ${topic} themed`
   };
 }
 
 // Input validation
 function validateInput(topic, platform) {
-  // Check if topic exists
   if (!topic || typeof topic !== 'string') {
     throw new Error('Please enter a valid topic');
   }
 
-  // Check minimum length
   const trimmedTopic = topic.trim();
   if (trimmedTopic.length < 5) {
     throw new Error('Topic must be at least 5 characters long');
   }
 
-  // Check maximum length
   if (trimmedTopic.length > 100) {
     throw new Error('Topic must be under 100 characters');
   }
 
-  // Block problematic content
-  const blockedKeywords = [
-    'illegal', 'hack', 'crack', 'pirate', 'cheat', 
-    'scam', 'fraud', 'steal', 'weapon', 'drug'
-  ];
-  
+  const blockedKeywords = ['illegal', 'hack', 'crack', 'pirate', 'weapon'];
   const lowerTopic = trimmedTopic.toLowerCase();
   
   for (const keyword of blockedKeywords) {
     if (lowerTopic.includes(keyword)) {
-      throw new Error('Please choose a different topic - this content cannot be generated');
+      throw new Error('Please choose a different topic');
     }
   }
 
-  // Validate platform
   const validPlatforms = ['instagram', 'linkedin', 'twitter', 'youtube'];
   if (!validPlatforms.includes(platform)) {
     throw new Error('Invalid platform selected');
@@ -152,19 +140,53 @@ function validateInput(topic, platform) {
   return true;
 }
 
-// Main content generation function
-export async function generateContent(topic, platform = 'instagram', style = 'minimal', youtubeType = 'short') {
+/**
+ * Main content generation function
+ * NOW USES USER'S PERSONAL API KEY!
+ */
+export async function generateContent(
+  topic, 
+  platform = 'instagram', 
+  style = 'minimal', 
+  youtubeType = 'short',
+  userId = null // REQUIRED for user's API key
+) {
   try {
-    // Validate input first
+    // Validate input
     validateInput(topic, platform);
 
-    console.log(`📝 Generating ${platform} content for: "${topic}" in ${style} style`);
+    console.log(`📝 Generating ${platform} content for topic: "${topic}"`);
+
+    // Get user's personal API key
+    let apiKey;
+    
+    if (userId) {
+      const keyResult = await getUserApiKey(userId);
+      
+      if (!keyResult.success) {
+        if (keyResult.needsKey) {
+          throw new Error('NEED_API_KEY'); // Special code to trigger modal
+        }
+        throw new Error(keyResult.error || 'Failed to get API key');
+      }
+      
+      apiKey = keyResult.apiKey;
+      console.log('🔑 Using user\'s personal API key');
+      
+    } else {
+      // Fallback to default key (for testing only)
+      apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+      console.log('🔑 Using fallback API key');
+    }
+
+    // Initialize Gemini with user's key
+    const genAI = new GoogleGenerativeAI(apiKey);
 
     // Get guidelines
     const platformGuide = platformGuidelines[platform] || platformGuidelines.instagram;
     const styleGuide = styleGuidelines[style] || styleGuidelines.minimal;
 
-    // Special handling for YouTube content types
+    // YouTube specific context
     let additionalContext = '';
     if (platform === 'youtube') {
       const youtubeGuide = youtubeContentTypes[youtubeType] || youtubeContentTypes.short;
@@ -175,10 +197,10 @@ YOUTUBE CONTENT TYPE: ${youtubeGuide.format}
 `;
     }
 
-    // Create comprehensive prompt
-    const prompt = `You are an expert ${platform} content creator specializing in viral, engaging posts that drive real engagement.
+    // Build comprehensive prompt
+    const prompt = `You are an expert ${platform} content creator specializing in viral, engaging posts.
 
-TASK: Create highly engaging, platform-optimized content about "${topic}"
+TASK: Create platform-optimized content about "${topic}"
 
 PLATFORM: ${platform.toUpperCase()}
 Platform Guidelines:
@@ -193,52 +215,46 @@ ${additionalContext}
 
 OUTPUT REQUIREMENTS:
 
-1. HOOK (Most Important):
-   - Create a scroll-stopping opening line (1-2 sentences)
-   - Use proven viral patterns (curiosity gaps, shocking statements, questions)
-   - Must grab attention in first 3 seconds
+1. HOOK (Critical):
+   - Create scroll-stopping opening (1-2 sentences max)
+   - Use proven viral patterns (curiosity gaps, shocking statements)
    - Platform-appropriate tone
-   - Make it irresistible to read more
+   - Make it irresistible
    
 2. CAPTION:
-   - Write an engaging ${platform} caption (${platformGuide.captionLength})
-   - Start with impact, maintain interest throughout
+   - Write engaging ${platform} caption (${platformGuide.captionLength})
+   - Start with impact, maintain interest
    - Include relevant details and insights
-   - End with call-to-action or engaging question
-   - Use natural, conversational language
-   - Make it feel authentic, not robotic
+   - End with call-to-action or question
+   - Natural, conversational language
    
 3. HASHTAGS:
    - Provide exactly ${platformGuide.hashtagCount}
-   - Mix: 40% popular (100K+ posts), 40% medium (10-50K), 20% niche (1-10K)
-   - All must be relevant to topic and platform
+   - Mix: 40% popular (100K+), 40% medium (10-50K), 20% niche
+   - All relevant to topic and platform
    - No spaces in hashtag names
-   - Research actual trending hashtags in this niche
    
 4. STYLE PROMPT (for AI image generation):
-   - Detailed visual description incorporating ${style} aesthetic
-   - Describe mood, colors, composition, lighting
-   - Platform-appropriate visuals (${platform} style)
-   - Be specific and detailed for best AI image results
+   - Detailed visual description
+   - Incorporate ${style} aesthetic
+   - Describe mood, colors, composition
+   - ${platform}-appropriate visuals
 
-CRITICAL FORMATTING:
-Return ONLY valid JSON in this EXACT format (no markdown, no extra text):
+CRITICAL: Return ONLY valid JSON in this EXACT format (no markdown):
 
 {
-  "hook": "your compelling hook here",
-  "caption": "your engaging caption here",
-  "hashtags": ["hashtag1", "hashtag2", "hashtag3"],
+  "hook": "compelling hook here",
+  "caption": "engaging caption here",
+  "hashtags": ["tag1", "tag2", "tag3"],
   "stylePrompt": "detailed visual description here"
-}
+}`;
 
-Remember: Quality over speed. Make this content truly engaging and valuable.`;
-
-    // Generate content with retry logic
+    // Generate with retry logic
     const result = await retryWithBackoff(async () => {
       const model = genAI.getGenerativeModel({ 
-        model: "gemini-2.5-pro",
+        model: "gemini-pro",
         generationConfig: {
-          temperature: 0.9, // More creative
+          temperature: 0.9,
           topP: 0.8,
           topK: 40,
         }
@@ -254,50 +270,43 @@ Remember: Quality over speed. Make this content truly engaging and valuable.`;
     // Parse JSON response
     let content;
     try {
-      // Remove any markdown code blocks if present
       let cleanedResult = result.trim();
       cleanedResult = cleanedResult.replace(/```json\n?/g, '');
       cleanedResult = cleanedResult.replace(/```\n?/g, '');
       cleanedResult = cleanedResult.trim();
 
-      // Try to extract JSON from response
       const jsonMatch = cleanedResult.match(/\{[\s\S]*\}/);
       if (!jsonMatch) {
-        console.warn('⚠️ No JSON found in response, using fallback');
-        throw new Error('No JSON found in response');
+        console.warn('⚠️ No JSON found, using fallback');
+        throw new Error('No JSON found');
       }
       
       content = JSON.parse(jsonMatch[0]);
       
-      // Validate parsed content structure
+      // Validate structure
       if (!content.hook || !content.caption || !content.hashtags || !content.stylePrompt) {
-        console.warn('⚠️ Incomplete content structure, using fallback');
-        throw new Error('Incomplete content structure');
+        console.warn('⚠️ Incomplete content, using fallback');
+        throw new Error('Incomplete content');
       }
 
-      // Validate hashtags is an array
+      // Clean hashtags
       if (!Array.isArray(content.hashtags)) {
-        console.warn('⚠️ Hashtags not an array, converting');
         content.hashtags = [];
       }
-
-      // Clean hashtags (remove # symbol if present, trim whitespace)
+      
       content.hashtags = content.hashtags
         .map(tag => tag.replace(/^#/, '').trim())
-        .filter(tag => tag.length > 0); // Remove empty tags
+        .filter(tag => tag.length > 0);
 
-      // Ensure minimum hashtag count
       if (content.hashtags.length < 3) {
-        console.warn('⚠️ Too few hashtags, adding defaults');
         const defaults = [topic.split(' ')[0], platform, style, 'content', 'viral'];
         content.hashtags = [...content.hashtags, ...defaults].slice(0, 10);
       }
 
-      console.log('✅ Content parsed and validated successfully');
+      console.log('✅ Content parsed successfully');
 
     } catch (parseError) {
-      console.error('❌ JSON parsing failed:', parseError);
-      console.log('📦 Using fallback content');
+      console.error('❌ Parse error:', parseError);
       content = generateFallbackContent(topic, platform, style);
     }
 
@@ -313,24 +322,34 @@ Remember: Quality over speed. Make this content truly engaging and valuable.`;
   } catch (error) {
     console.error('❌ Generation error:', error);
 
-    // Provide user-friendly error messages
-    if (error.message.includes('API key') || error.message.includes('API_KEY')) {
-      throw new Error('❌ API key error - please check your Gemini API key configuration');
-    } else if (error.message.includes('quota') || error.message.includes('limit exceeded')) {
-      throw new Error('⏰ Daily API limit reached - please try again tomorrow or use a different API key');
-    } else if (error.message.includes('rate limit') || error.message.includes('429')) {
-      throw new Error('⏸️ Too many requests - please wait 30 seconds and try again');
-    } else if (error.message.includes('network') || error.message.includes('fetch') || error.message.includes('Failed to fetch')) {
-      throw new Error('🌐 Network error - please check your internet connection');
-    } else if (error.message.includes('blocked') || error.message.includes('safety')) {
-      throw new Error('🚫 Content filtered by AI safety systems - please try a different topic');
-    } else if (error.message.length < 100 && !error.message.includes('undefined')) {
-      // Use the original error message if it's short and meaningful
-      throw error;
-    } else {
-      // Generic fallback error
-      throw new Error('❌ Generation failed - please try again or try a different topic');
+    // Handle special error codes
+    if (error.message === 'NEED_API_KEY') {
+      throw new Error('NEED_API_KEY'); // Pass through
     }
+    
+    // Check for quota exceeded
+    if (error.message.includes('quota') || error.message.includes('RESOURCE_EXHAUSTED')) {
+      if (userId) {
+        await updateApiKeyStatus(userId, 'quota_exceeded', 'Daily quota reached');
+      }
+      throw new Error('⏰ Daily API quota reached. It resets at midnight Pacific Time.');
+    }
+
+    // Check for invalid key
+    if (error.message.includes('API_KEY_INVALID') || error.message.includes('invalid')) {
+      if (userId) {
+        await updateApiKeyStatus(userId, 'invalid', 'API key is invalid');
+      }
+      throw new Error('❌ Your API key is invalid. Please update it in settings.');
+    }
+
+    // Network errors
+    if (error.message.includes('network') || error.message.includes('fetch')) {
+      throw new Error('🌐 Network error - check your internet connection');
+    }
+
+    // Generic error
+    throw new Error(error.message || '❌ Generation failed. Please try again.');
   }
 }
 
@@ -339,26 +358,22 @@ export async function testConnection() {
   try {
     console.log('🔍 Testing Gemini API connection...');
     
+    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+    if (!apiKey) {
+      return false;
+    }
+    
+    const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
-    const result = await model.generateContent("Say 'connected' if you can read this");
+    const result = await model.generateContent("Say 'connected'");
     const text = await result.response.text();
     
-    const isConnected = text.toLowerCase().includes('connected');
-    console.log(isConnected ? '✅ API connection successful' : '⚠️ API responded but unclear');
+    const isConnected = text.toLowerCase().includes('connect');
+    console.log(isConnected ? '✅ API connected' : '⚠️ API responded unclear');
     
     return isConnected;
   } catch (error) {
-    console.error('❌ API connection test failed:', error);
+    console.error('❌ Connection test failed:', error);
     return false;
   }
-}
-
-// Get API usage stats (if available)
-export async function getApiStats() {
-  // Note: Gemini doesn't provide usage stats via API
-  // This is a placeholder for future implementation
-  return {
-    supported: false,
-    message: 'Usage stats not available for Gemini API'
-  };
 }

@@ -1,7 +1,12 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { auth } from '../config/firebase';
+import { signInWithPopup } from 'firebase/auth';
+import { googleProvider } from '../config/firebase';
 import { generateContent } from '../services/geminiService';
 import { generateImage } from '../services/imageService';
-import LoadingAnimation from './LoadingAnimation';
+import { getUserApiKey } from '../services/userApiKeyService';
+import ApiKeySetupModal from './ApiKeySetupModal';
+import { LogIn } from 'lucide-react';
 
 function GeneratorForm({ onBack, onResultsGenerated }) {
   // State management
@@ -13,7 +18,13 @@ function GeneratorForm({ onBack, onResultsGenerated }) {
   const [loadingMessage, setLoadingMessage] = useState('');
   const [error, setError] = useState(null);
 
-  // Trending topics suggestions
+  // User & API Key state
+  const [user, setUser] = useState(null);
+  const [hasApiKey, setHasApiKey] = useState(false);
+  const [showApiKeyModal, setShowApiKeyModal] = useState(false);
+  const [checkingAuth, setCheckingAuth] = useState(true);
+
+  // Trending topics
   const trendingTopics = [
     "AI productivity hacks",
     "Sustainable living tips",
@@ -22,7 +33,7 @@ function GeneratorForm({ onBack, onResultsGenerated }) {
     "Fitness motivation"
   ];
 
-  // Style descriptions
+  // Style info
   const styleInfo = {
     minimal: { emoji: "🤍", desc: "Clean & simple" },
     bold: { emoji: "💪", desc: "High impact" },
@@ -31,7 +42,7 @@ function GeneratorForm({ onBack, onResultsGenerated }) {
     vibrant: { emoji: "🎨", desc: "Colorful & energetic" }
   };
 
-  // Platform info with colors
+  // Platform info
   const platformInfo = {
     instagram: { emoji: "📸", color: "from-pink-500 to-purple-500" },
     linkedin: { emoji: "💼", color: "from-blue-500 to-blue-600" },
@@ -39,7 +50,7 @@ function GeneratorForm({ onBack, onResultsGenerated }) {
     youtube: { emoji: "▶️", color: "from-red-500 to-red-600" }
   };
 
-  // YouTube content types
+  // YouTube types
   const youtubeTypes = [
     { id: 'short', label: 'Short', desc: '60s script' },
     { id: 'title', label: 'Video Title', desc: 'Catchy titles' },
@@ -51,10 +62,58 @@ function GeneratorForm({ onBack, onResultsGenerated }) {
   const characterCount = topic.length;
   const maxCharacters = 100;
 
-  // Handle content generation with MULTIPLE variations
+  // Check auth & API key on mount
+  useEffect(() => {
+    const unsubscribe = auth.onAuthStateChanged(async (currentUser) => {
+      setUser(currentUser);
+      setCheckingAuth(false);
+      
+      if (currentUser) {
+        console.log('✅ User logged in:', currentUser.uid);
+        
+        // Check if user has API key
+        const keyResult = await getUserApiKey(currentUser.uid);
+        setHasApiKey(keyResult.success);
+        
+        console.log('🔑 Has API key:', keyResult.success);
+        
+        // Don't auto-show modal on mount, only when trying to generate
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Handle Google Sign In
+  const handleGoogleSignIn = async () => {
+    try {
+      console.log('🔐 Starting Google sign in...');
+      const result = await signInWithPopup(auth, googleProvider);
+      console.log('✅ Signed in:', result.user.uid);
+      
+      // Check if they have API key
+      const keyResult = await getUserApiKey(result.user.uid);
+      setHasApiKey(keyResult.success);
+      
+      if (!keyResult.success) {
+        // Show API key setup modal
+        setShowApiKeyModal(true);
+      }
+    } catch (error) {
+      console.error('❌ Sign in error:', error);
+      setError('Failed to sign in. Please try again.');
+    }
+  };
+
+  // Handle content generation
   const handleGenerate = async () => {
-    // Clear previous errors
     setError(null);
+
+    // Check if user is signed in
+    if (!user) {
+      setError('Please sign in to generate content');
+      return;
+    }
 
     // Input validation
     if (!topic.trim()) {
@@ -63,54 +122,47 @@ function GeneratorForm({ onBack, onResultsGenerated }) {
     }
 
     if (topic.trim().length < 5) {
-      setError('Topic too short - please add more details (at least 5 characters)');
+      setError('Topic too short - add more details (at least 5 characters)');
       return;
     }
 
     if (topic.length > 100) {
-      setError('Topic too long - please keep it under 100 characters');
+      setError('Topic too long - keep it under 100 characters');
       return;
     }
 
     setLoading(true);
-    console.log('🚀 Starting content generation...');
-    console.log(`Platform: ${platform}, Style: ${style}, Topic: "${topic}"`);
+    console.log('🚀 Starting generation...');
 
     try {
-      // Generate 3 variations of content
-      setLoadingMessage('🎯 Crafting viral hooks...');
-      console.log('📝 Generating 3 content variations...');
+      // Step 1: Generate text content
+      setLoadingMessage('Analyzing your topic...');
+      console.log('📝 Step 1: Generating text...');
       
-      const contentVariations = await Promise.all([
-        generateContent(topic, platform, style, youtubeType),
-        generateContent(topic, platform, style, youtubeType),
-        generateContent(topic, platform, style, youtubeType)
-      ]);
+      const content = await generateContent(
+        topic, 
+        platform, 
+        style, 
+        youtubeType, 
+        user.uid // Pass user ID to use their API key
+      );
       
-      console.log('✅ All 3 variations generated');
+      console.log('✅ Text generated');
+      await new Promise(resolve => setTimeout(resolve, 300));
       
-      // Small delay for UX
-      await new Promise(resolve => setTimeout(resolve, 500));
+      // Step 2: Generate image
+      setLoadingMessage('Creating your visual...');
+      console.log('🎨 Step 2: Generating image...');
       
-      // Generate image for the first variation
-      setLoadingMessage('🎨 Generating image concepts...');
-      console.log('🎨 Generating image...');
+      const imageUrl = await generateImage(content.stylePrompt, topic);
+      console.log('✅ Image generated');
+      await new Promise(resolve => setTimeout(resolve, 300));
       
-      const imageUrl = await generateImage(contentVariations[0].stylePrompt, topic);
-      console.log('✅ Image generated:', imageUrl);
-      
-      // Small delay
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      // Prepare final result with variations
-      setLoadingMessage('✨ Finalizing your content...');
+      // Step 3: Prepare result
+      setLoadingMessage('Finalizing...');
       
       const result = {
-        variations: contentVariations.map((content, index) => ({
-          ...content,
-          id: `variation-${index + 1}`,
-          variationNumber: index + 1
-        })),
+        ...content,
         imageUrl,
         topic,
         platform,
@@ -120,44 +172,59 @@ function GeneratorForm({ onBack, onResultsGenerated }) {
         id: `sparklio-${Date.now()}`
       };
       
-      // Save to history
+      // Save to localStorage history
       saveToHistory(result);
       
       console.log('🎉 Generation complete!');
-      console.log('Result with 3 variations:', result);
       
       // Show results
       if (onResultsGenerated) {
         onResultsGenerated(result);
+      } else {
+        alert('✅ Content generated! Check console for details.');
+        console.log('Result:', result);
       }
       
       setError(null);
       
     } catch (error) {
       console.error('❌ Generation failed:', error);
+      
+      // Handle special error: needs API key
+      if (error.message === 'NEED_API_KEY') {
+        setShowApiKeyModal(true);
+        setError('Please add your Gemini API key to continue');
+        return;
+      }
+      
       setError(error.message || 'Generation failed - please try again');
       
     } finally {
       setLoading(false);
       setLoadingMessage('');
-      console.log('✨ Generation process finished');
     }
   };
 
-  // Save to localStorage history
+  // Save to history
   const saveToHistory = (result) => {
     try {
       const history = JSON.parse(localStorage.getItem('sparklio-history') || '[]');
       history.unshift(result);
-      const trimmedHistory = history.slice(0, 10);
-      localStorage.setItem('sparklio-history', JSON.stringify(trimmedHistory));
+      localStorage.setItem('sparklio-history', JSON.stringify(history.slice(0, 10)));
       console.log('💾 Saved to history');
-    } catch (storageError) {
-      console.warn('⚠️ Failed to save to history:', storageError);
+    } catch (err) {
+      console.warn('⚠️ Failed to save history:', err);
     }
   };
 
-  // Handle Enter key press
+  // Handle API key modal success
+  const handleApiKeySuccess = () => {
+    setHasApiKey(true);
+    setShowApiKeyModal(false);
+    setError(null);
+  };
+
+  // Handle Enter key
   const handleKeyPress = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -167,10 +234,7 @@ function GeneratorForm({ onBack, onResultsGenerated }) {
 
   return (
     <div className="min-h-screen bg-dark-bg relative overflow-hidden">
-      {/* LOADING ANIMATION - SHOWS WHEN GENERATING */}
-      {loading && <LoadingAnimation message={loadingMessage} />}
-
-      {/* Animated Background Blobs */}
+      {/* Animated Background */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-20 left-10 w-64 h-64 bg-spark-orange/10 rounded-full blur-3xl animate-pulse"></div>
         <div className="absolute bottom-20 right-10 w-80 h-80 bg-frame-purple/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '700ms' }}></div>
@@ -184,15 +248,53 @@ function GeneratorForm({ onBack, onResultsGenerated }) {
             className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors group"
           >
             <span className="text-xl group-hover:-translate-x-1 transition-transform">←</span>
-            <span>Back to Home</span>
+            <span>Back</span>
           </button>
+          
           <div className="flex items-center gap-2">
             <span className="text-2xl">✨</span>
             <h1 className="text-xl font-bold bg-gradient-to-r from-spark-orange via-spark-pink to-frame-purple bg-clip-text text-transparent">
               SPARKLIO
             </h1>
           </div>
-          <div className="w-32"></div>
+          
+          {/* User Info */}
+          <div className="flex items-center gap-3">
+            {user ? (
+              <>
+                <div className="flex items-center gap-2">
+                  {hasApiKey ? (
+                    <span className="text-xs text-green-400 flex items-center gap-1">
+                      <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
+                      API Connected
+                    </span>
+                  ) : (
+                    <button
+                      onClick={() => setShowApiKeyModal(true)}
+                      className="text-xs text-orange-400 hover:text-orange-300 transition-colors"
+                    >
+                      Add API Key
+                    </button>
+                  )}
+                </div>
+                {user.photoURL && (
+                  <img 
+                    src={user.photoURL} 
+                    alt="Profile" 
+                    className="w-8 h-8 rounded-full border-2 border-spark-orange"
+                  />
+                )}
+              </>
+            ) : (
+              <button
+                onClick={handleGoogleSignIn}
+                className="flex items-center gap-2 bg-spark-orange hover:bg-spark-pink px-4 py-2 rounded-lg transition-colors text-sm font-medium"
+              >
+                <LogIn className="w-4 h-4" />
+                Sign In
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -228,6 +330,24 @@ function GeneratorForm({ onBack, onResultsGenerated }) {
           </div>
         )}
 
+        {/* Sign In Prompt (if not signed in) */}
+        {!user && !checkingAuth && (
+          <div className="mb-6 bg-blue-500/10 border border-blue-500/30 rounded-xl p-6 text-center">
+            <div className="text-4xl mb-3">🔐</div>
+            <h3 className="text-xl font-bold text-white mb-2">Sign In to Generate</h3>
+            <p className="text-gray-400 mb-4">
+              Sign in with Google to use Sparklio and get unlimited generations with your own API key
+            </p>
+            <button
+              onClick={handleGoogleSignIn}
+              className="bg-gradient-to-r from-spark-orange to-spark-pink px-6 py-3 rounded-lg font-semibold hover:scale-105 transition-transform inline-flex items-center gap-2"
+            >
+              <LogIn className="w-5 h-5" />
+              Sign In with Google
+            </button>
+          </div>
+        )}
+
         {/* Topic Input Card */}
         <div className="bg-gradient-to-br from-dark-surface/90 to-dark-surface/50 backdrop-blur-xl rounded-2xl p-8 mb-6 border border-spark-orange/20 shadow-2xl">
           <label className="block text-spark-orange text-sm font-semibold mb-4 uppercase tracking-wider flex items-center gap-2">
@@ -243,7 +363,7 @@ function GeneratorForm({ onBack, onResultsGenerated }) {
               placeholder="Describe your content idea... (e.g., '10 sustainable fashion tips for beginners')"
               rows="3"
               className="w-full bg-gray-900/50 border-2 border-gray-700 rounded-xl px-5 py-4 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-spark-orange focus:border-transparent transition-all resize-none"
-              disabled={loading}
+              disabled={loading || !user}
             />
             <div className="absolute bottom-3 right-3 text-xs">
               <span className={characterCount > maxCharacters * 0.9 ? 'text-spark-orange font-bold' : 'text-gray-500'}>
@@ -262,7 +382,7 @@ function GeneratorForm({ onBack, onResultsGenerated }) {
                 <button
                   key={index}
                   onClick={() => setTopic(trending)}
-                  disabled={loading}
+                  disabled={loading || !user}
                   className="text-xs bg-gray-800/50 hover:bg-gray-700/50 text-gray-300 px-3 py-1.5 rounded-full border border-gray-700 hover:border-spark-orange/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {trending}
@@ -378,18 +498,18 @@ function GeneratorForm({ onBack, onResultsGenerated }) {
           <div className={`absolute -inset-1 bg-gradient-to-r from-spark-orange via-spark-pink to-frame-purple rounded-xl blur opacity-50 transition duration-1000 ${loading ? 'animate-pulse' : ''}`}></div>
           <button
             onClick={handleGenerate}
-            disabled={loading || !topic.trim()}
+            disabled={loading || !topic.trim() || !user}
             className="relative w-full bg-gradient-to-r from-spark-orange via-spark-pink to-frame-purple text-white py-5 rounded-xl font-bold uppercase tracking-wide hover:scale-[1.02] transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-2xl flex items-center justify-center gap-3 text-lg"
           >
             {loading ? (
               <>
                 <div className="w-6 h-6 border-3 border-white border-t-transparent rounded-full animate-spin"></div>
-                <span>Creating Your Spark...</span>
+                <span>{loadingMessage || 'Creating...'}</span>
               </>
             ) : (
               <>
                 <span className="text-2xl animate-bounce">⚡</span>
-                <span>Generate 3 Variations</span>
+                <span>Generate Content</span>
                 <span className="text-2xl">✨</span>
               </>
             )}
@@ -400,13 +520,27 @@ function GeneratorForm({ onBack, onResultsGenerated }) {
         <div className="mt-6 text-center">
           <p className="text-gray-500 text-sm flex items-center justify-center gap-2">
             <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-            AI powered • 3 variations per generation • Unlimited generations
+            {user && hasApiKey ? (
+              'Using your personal API key • Unlimited generations'
+            ) : user ? (
+              'Add API key for unlimited generations'
+            ) : (
+              'Sign in to start generating'
+            )}
           </p>
           <p className="text-gray-600 text-xs mt-2">
             💡 Tip: Press Enter to generate instantly
           </p>
         </div>
       </div>
+
+      {/* API Key Setup Modal */}
+      <ApiKeySetupModal
+        isOpen={showApiKeyModal}
+        onClose={() => setShowApiKeyModal(false)}
+        userId={user?.uid}
+        onSuccess={handleApiKeySuccess}
+      />
     </div>
   );
 }
