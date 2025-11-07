@@ -16,26 +16,47 @@ async function testApiKey(apiKey) {
     const result = await model.generateContent("Say 'connected' if you can read this");
     const text = await result.response.text();
     
-    if (text.toLowerCase().includes('connect')) {
+    if (text && text.toLowerCase().includes('connect')) {
       console.log('✅ API key test successful');
       return { valid: true };
     }
-    
-    return { valid: true }; // If response exists, key works
+
+    // Even if the response doesn’t include "connect", if no error occurs, it’s valid
+    return { valid: true };
     
   } catch (error) {
     console.error('❌ API key test failed:', error);
-    
-    if (error.message.includes('API_KEY_INVALID') || error.message.includes('invalid')) {
+
+    if (error.message?.includes('API_KEY_INVALID') || error.message?.includes('invalid')) {
       return { valid: false, error: 'Invalid API key. Please check your key.' };
-    } else if (error.message.includes('quota') || error.message.includes('RESOURCE_EXHAUSTED')) {
-      return { valid: true }; // Key is valid but quota exceeded (still save it)
-    } else if (error.message.includes('billing')) {
-      return { valid: false, error: 'Billing not enabled. Make sure API is enabled in Google Cloud.' };
+    } else if (error.message?.includes('quota') || error.message?.includes('RESOURCE_EXHAUSTED')) {
+      // Key is valid but daily quota exceeded
+      return { valid: true, info: 'Quota exceeded but key is valid.' };
+    } else if (error.message?.includes('billing')) {
+      return { valid: false, error: 'Billing not enabled. Enable API in Google Cloud Console.' };
     }
-    
+
     return { valid: false, error: 'Could not verify API key. Please try again.' };
   }
+}
+
+/**
+ * Auto-create user document if missing
+ */
+async function ensureUserExists(userId) {
+  const userRef = doc(db, 'users', userId);
+  const userSnap = await getDoc(userRef);
+
+  if (!userSnap.exists()) {
+    console.log('🆕 Creating new user document for:', userId);
+    await setDoc(userRef, {
+      createdAt: new Date().toISOString(),
+      hasApiKey: false,
+      apiKeyStatus: 'none',
+    });
+  }
+
+  return userRef;
 }
 
 /**
@@ -45,23 +66,25 @@ export async function saveUserApiKey(userId, apiKey) {
   try {
     console.log('💾 Saving API key for user:', userId);
     
-    // Validate format
+    // Step 1: Ensure user document exists
+    const userRef = await ensureUserExists(userId);
+    
+    // Step 2: Validate key format
     const formatValidation = validateApiKeyFormat(apiKey);
     if (!formatValidation.valid) {
       return { success: false, error: formatValidation.error };
     }
     
-    // Test if key works
+    // Step 3: Test key
     const testResult = await testApiKey(apiKey.trim());
     if (!testResult.valid) {
       return { success: false, error: testResult.error };
     }
     
-    // Encrypt key
+    // Step 4: Encrypt key
     const encryptedKey = encryptApiKey(apiKey.trim());
     
-    // Save to Firestore
-    const userRef = doc(db, 'users', userId);
+    // Step 5: Save key to Firestore
     await setDoc(userRef, {
       hasApiKey: true,
       apiKeyEncrypted: encryptedKey,
@@ -72,7 +95,6 @@ export async function saveUserApiKey(userId, apiKey) {
     }, { merge: true });
     
     console.log('✅ API key saved successfully');
-    
     return { success: true };
     
   } catch (error) {
@@ -86,7 +108,7 @@ export async function saveUserApiKey(userId, apiKey) {
  */
 export async function getUserApiKey(userId) {
   try {
-    const userRef = doc(db, 'users', userId);
+    const userRef = await ensureUserExists(userId);
     const userDoc = await getDoc(userRef);
     
     if (!userDoc.exists()) {
@@ -99,14 +121,9 @@ export async function getUserApiKey(userId) {
       return { success: false, error: 'No API key configured', needsKey: true };
     }
     
-    // Decrypt key
     const apiKey = decryptApiKey(userData.apiKeyEncrypted);
     
-    return { 
-      success: true, 
-      apiKey,
-      status: userData.apiKeyStatus || 'active'
-    };
+    return { success: true, apiKey, status: userData.apiKeyStatus || 'active' };
     
   } catch (error) {
     console.error('❌ Get API key error:', error);
@@ -119,7 +136,7 @@ export async function getUserApiKey(userId) {
  */
 export async function removeUserApiKey(userId) {
   try {
-    const userRef = doc(db, 'users', userId);
+    const userRef = await ensureUserExists(userId);
     await updateDoc(userRef, {
       hasApiKey: false,
       apiKeyEncrypted: null,
@@ -141,7 +158,7 @@ export async function removeUserApiKey(userId) {
  */
 export async function updateApiKeyStatus(userId, status, reason = '') {
   try {
-    const userRef = doc(db, 'users', userId);
+    const userRef = await ensureUserExists(userId);
     await updateDoc(userRef, {
       apiKeyStatus: status,
       apiKeyStatusReason: reason,
