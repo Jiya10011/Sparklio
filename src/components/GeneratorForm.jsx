@@ -1,14 +1,14 @@
 import { useState, useEffect } from 'react';
 import { auth } from '../config/firebase';
-import { signInWithPopup } from 'firebase/auth';
+import { signInWithPopup, signOut } from 'firebase/auth';
 import { googleProvider } from '../config/firebase';
 import { generateContent } from '../services/geminiService';
 import { generateImage } from '../services/imageService';
 import { getUserApiKey } from '../services/userApiKeyService';
 import ApiKeySetupModal from './ApiKeySetupModal';
-import { LogIn } from 'lucide-react';
+import { LogIn, LogOut, Menu, History, ChevronDown } from 'lucide-react';
 
-function GeneratorForm({ onBack, onResultsGenerated }) {
+function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
   // State management
   const [topic, setTopic] = useState('');
   const [platform, setPlatform] = useState('instagram');
@@ -23,6 +23,7 @@ function GeneratorForm({ onBack, onResultsGenerated }) {
   const [hasApiKey, setHasApiKey] = useState(false);
   const [showApiKeyModal, setShowApiKeyModal] = useState(false);
   const [checkingAuth, setCheckingAuth] = useState(true);
+  const [showUserMenu, setShowUserMenu] = useState(false);
 
   // Trending topics
   const trendingTopics = [
@@ -58,26 +59,23 @@ function GeneratorForm({ onBack, onResultsGenerated }) {
     { id: 'thumbnail', label: 'Thumbnail Idea', desc: 'Text concepts' }
   ];
 
-  // Character counter
+  // Character counter - UPDATED TO 300
   const characterCount = topic.length;
-  const maxCharacters = 100;
+  const maxCharacters = 300; // CHANGED FROM 100 TO 300
 
   // Check auth & API key on mount
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged(async (currentUser) => {
       setUser(currentUser);
       setCheckingAuth(false);
-      
+
       if (currentUser) {
         console.log('✅ User logged in:', currentUser.uid);
         
         // Check if user has API key
         const keyResult = await getUserApiKey(currentUser.uid);
         setHasApiKey(keyResult.success);
-        
         console.log('🔑 Has API key:', keyResult.success);
-        
-        // Don't auto-show modal on mount, only when trying to generate
       }
     });
 
@@ -105,115 +103,131 @@ function GeneratorForm({ onBack, onResultsGenerated }) {
     }
   };
 
-  // Handle content generation
-const handleGenerate = async () => {
-  setError(null);
-
-  // Check if user is signed in
-  if (!user) {
-    setError('Please sign in to generate content');
-    return;
-  }
-
-  // Input validation
-  if (!topic.trim()) {
-    setError('Please enter a topic! ✨');
-    return;
-  }
-
-  if (topic.trim().length < 5) {
-    setError('Topic too short - add more details (at least 5 characters)');
-    return;
-  }
-
-  if (topic.length > 200) {
-    setError('Topic too long - keep it under 200 characters');
-    return;
-  }
-
-  setLoading(true);
-  console.log('🚀 Starting generation...');
-
-  try {
-    // Step 1: Generate 3 variations of text content
-    setLoadingMessage('🎯 Crafting viral hooks...');
-    console.log('📝 Step 1: Generating 3 content variations...');
-    
-    // Generate 3 variations in parallel
-    const contentVariations = await Promise.all([
-      generateContent(topic, platform, style, youtubeType, user.uid),
-      generateContent(topic, platform, style, youtubeType, user.uid),
-      generateContent(topic, platform, style, youtubeType, user.uid)
-    ]);
-    
-    console.log('✅ All 3 variations generated');
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
-    // Step 2: Generate image for the first variation
-    setLoadingMessage('🎨 Generating image concepts...');
-    console.log('🎨 Step 2: Generating image...');
-    
-    const imageUrl = await generateImage(contentVariations[0].stylePrompt, topic);
-    console.log('✅ Image generated:', imageUrl);
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
-    // Step 3: Prepare final result with variations
-    setLoadingMessage('✨ Finalizing your content...');
-    
-    const result = {
-      // Format expected by ResultsDisplay
-      variations: contentVariations.map((content, index) => ({
-        ...content,
-        id: `variation-${index + 1}`,
-        variationNumber: index + 1
-      })),
-      imageUrl,
-      topic,
-      platform,
-      style,
-      youtubeType: platform === 'youtube' ? youtubeType : null,
-      timestamp: new Date().toISOString(),
-      id: `sparklio-${Date.now()}`
-    };
-    
-    // Save to localStorage history
-    saveToHistory(result);
-    
-    console.log('🎉 Generation complete!');
-    console.log('Result with 3 variations:', result);
-    
-    // Show results
-    if (onResultsGenerated) {
-      onResultsGenerated(result);
+  // Handle Sign Out
+  const handleSignOut = async () => {
+    try {
+      await signOut(auth);
+      setUser(null);
+      setHasApiKey(false);
+      setShowUserMenu(false);
+      console.log('👋 Signed out successfully');
+    } catch (error) {
+      console.error('❌ Sign out error:', error);
+      setError('Failed to sign out. Please try again.');
     }
-    
+  };
+
+  // Handle content generation with 5 VARIATIONS
+  const handleGenerate = async () => {
     setError(null);
-    
-  } catch (error) {
-    console.error('❌ Generation failed:', error);
-    
-    // Handle special error: needs API key
-    if (error.message === 'NEED_API_KEY') {
-      setShowApiKeyModal(true);
-      setError('Please add your Gemini API key to continue');
+
+    // Check if user is signed in
+    if (!user) {
+      setError('Please sign in to generate content');
       return;
     }
-    
-    setError(error.message || 'Generation failed - please try again');
-    
-  } finally {
-    setLoading(false);
-    setLoadingMessage('');
-    console.log('✨ Generation process finished');
-  }
-};
+
+    // Input validation
+    if (!topic.trim()) {
+      setError('Please enter a topic! ✨');
+      return;
+    }
+
+    if (topic.trim().length < 5) {
+      setError('Topic too short - add more details (at least 5 characters)');
+      return;
+    }
+
+    if (topic.length > 300) {
+      setError('Topic too long - keep it under 300 characters');
+      return;
+    }
+
+    setLoading(true);
+    console.log('🚀 Starting generation...');
+
+    try {
+      // Step 1: Generate 5 variations of text content (CHANGED FROM 3 TO 5)
+      setLoadingMessage('🎯 Crafting viral hooks...');
+      console.log('📝 Step 1: Generating 5 content variations...');
+
+      // Generate 5 variations in parallel
+      const contentVariations = await Promise.all([
+        generateContent(topic, platform, style, youtubeType, user.uid),
+        generateContent(topic, platform, style, youtubeType, user.uid),
+        generateContent(topic, platform, style, youtubeType, user.uid),
+        generateContent(topic, platform, style, youtubeType, user.uid),
+        generateContent(topic, platform, style, youtubeType, user.uid) // ADDED 2 MORE
+      ]);
+
+      console.log('✅ All 5 variations generated');
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Step 2: Generate image for the first variation
+      setLoadingMessage('🎨 Generating image concepts...');
+      console.log('🎨 Step 2: Generating image...');
+
+      const imageUrl = await generateImage(contentVariations[0].stylePrompt, topic);
+      console.log('✅ Image generated:', imageUrl);
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Step 3: Prepare final result with variations
+      setLoadingMessage('✨ Finalizing your content...');
+
+      const result = {
+        // Format expected by ResultsDisplay
+        variations: contentVariations.map((content, index) => ({
+          ...content,
+          id: `variation-${index + 1}`,
+          variationNumber: index + 1
+        })),
+        imageUrl,
+        topic,
+        platform,
+        style,
+        youtubeType: platform === 'youtube' ? youtubeType : null,
+        timestamp: new Date().toISOString(),
+        id: `sparklio-${Date.now()}`
+      };
+
+      // Save to localStorage history
+      saveToHistory(result);
+
+      console.log('🎉 Generation complete!');
+      console.log('Result with 5 variations:', result);
+
+      // Show results
+      if (onResultsGenerated) {
+        onResultsGenerated(result);
+      }
+
+      setError(null);
+
+    } catch (error) {
+      console.error('❌ Generation failed:', error);
+      
+      // Handle special error: needs API key
+      if (error.message === 'NEED_API_KEY') {
+        setShowApiKeyModal(true);
+        setError('Please add your Gemini API key to continue');
+        return;
+      }
+
+      setError(error.message || 'Generation failed - please try again');
+
+    } finally {
+      setLoading(false);
+      setLoadingMessage('');
+      console.log('✨ Generation process finished');
+    }
+  };
 
   // Save to history
   const saveToHistory = (result) => {
     try {
       const history = JSON.parse(localStorage.getItem('sparklio-history') || '[]');
       history.unshift(result);
-      localStorage.setItem('sparklio-history', JSON.stringify(history.slice(0, 10)));
+      localStorage.setItem('sparklio-history', JSON.stringify(history.slice(0, 20)));
       console.log('💾 Saved to history');
     } catch (err) {
       console.warn('⚠️ Failed to save history:', err);
@@ -235,6 +249,18 @@ const handleGenerate = async () => {
     }
   };
 
+  // Close user menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (showUserMenu && !event.target.closest('.user-menu-container')) {
+        setShowUserMenu(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showUserMenu]);
+
   return (
     <div className="min-h-screen bg-dark-bg relative overflow-hidden">
       {/* Animated Background */}
@@ -246,48 +272,96 @@ const handleGenerate = async () => {
       {/* Header */}
       <div className="relative z-10 border-b border-gray-800 bg-dark-surface/50 backdrop-blur-md sticky top-0">
         <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
-          <button 
+          <button
             onClick={onBack}
             className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors group"
           >
             <span className="text-xl group-hover:-translate-x-1 transition-transform">←</span>
             <span>Back</span>
           </button>
-          
+
           <div className="flex items-center gap-2">
             <span className="text-2xl">✨</span>
             <h1 className="text-xl font-bold bg-gradient-to-r from-spark-orange via-spark-pink to-frame-purple bg-clip-text text-transparent">
               SPARKLIO
             </h1>
           </div>
-          
-          {/* User Info */}
+
+          {/* User Info / Sign In */}
           <div className="flex items-center gap-3">
             {user ? (
-              <>
-                <div className="flex items-center gap-2">
-                  {hasApiKey ? (
-                    <span className="text-xs text-green-400 flex items-center gap-1">
-                      <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
-                      API Connected
-                    </span>
-                  ) : (
-                    <button
-                      onClick={() => setShowApiKeyModal(true)}
-                      className="text-xs text-orange-400 hover:text-orange-300 transition-colors"
-                    >
-                      Add API Key
-                    </button>
+              <div className="relative user-menu-container">
+                {/* User Menu Button */}
+                <button
+                  onClick={() => setShowUserMenu(!showUserMenu)}
+                  className="flex items-center gap-2 bg-gray-800/50 hover:bg-gray-700/50 px-3 py-2 rounded-lg transition-all"
+                >
+                  {user.photoURL && (
+                    <img
+                      src={user.photoURL}
+                      alt="Profile"
+                      className="w-8 h-8 rounded-full border-2 border-spark-orange"
+                    />
                   )}
-                </div>
-                {user.photoURL && (
-                  <img 
-                    src={user.photoURL} 
-                    alt="Profile" 
-                    className="w-8 h-8 rounded-full border-2 border-spark-orange"
-                  />
+                  <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${showUserMenu ? 'rotate-180' : ''}`} />
+                </button>
+
+                {/* Dropdown Menu */}
+                {showUserMenu && (
+                  <div className="absolute right-0 mt-2 w-64 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl overflow-hidden z-50">
+                    {/* User Info */}
+                    <div className="p-4 border-b border-gray-700">
+                      <p className="text-white font-medium truncate">{user.displayName || user.email}</p>
+                      <p className="text-gray-400 text-sm truncate">{user.email}</p>
+                      
+                      {/* API Key Status */}
+                      <div className="mt-3 flex items-center justify-between">
+                        <span className="text-xs text-gray-400">API Key:</span>
+                        {hasApiKey ? (
+                          <span className="text-xs text-green-400 flex items-center gap-1">
+                            <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
+                            Connected
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              setShowApiKeyModal(true);
+                              setShowUserMenu(false);
+                            }}
+                            className="text-xs text-orange-400 hover:text-orange-300 transition-colors"
+                          >
+                            Add Key
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Menu Items */}
+                    <div className="py-2">
+                      {onViewHistory && (
+                        <button
+                          onClick={() => {
+                            onViewHistory();
+                            setShowUserMenu(false);
+                          }}
+                          className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-800 transition-colors text-left"
+                        >
+                          <History className="w-4 h-4 text-gray-400" />
+                          <span className="text-white text-sm">View History</span>
+                        </button>
+                      )}
+
+                      <button
+                        onClick={handleSignOut}
+                        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-red-500/10 transition-colors text-left text-red-400"
+                      >
+                        <LogOut className="w-4 h-4" />
+                        <span className="text-sm">Sign Out</span>
+                      </button>
+                    </div>
+                  </div>
                 )}
-              </>
+              </div>
             ) : (
               <button
                 onClick={handleGoogleSignIn}
@@ -303,7 +377,6 @@ const handleGenerate = async () => {
 
       {/* Main Content */}
       <div className="relative z-10 max-w-4xl mx-auto px-4 py-8">
-        
         {/* Progress Indicator */}
         <div className="mb-8">
           <div className="flex items-center justify-center gap-2 mb-2">
@@ -324,7 +397,7 @@ const handleGenerate = async () => {
               <p className="text-red-400 font-medium">Error</p>
               <p className="text-red-300 text-sm mt-1">{error}</p>
             </div>
-            <button 
+            <button
               onClick={() => setError(null)}
               className="text-red-400 hover:text-red-300 text-xl"
             >
@@ -357,14 +430,14 @@ const handleGenerate = async () => {
             <span className="text-xl">✨</span>
             What's Your Spark?
           </label>
-          
+
           <div className="relative">
             <textarea
               value={topic}
               onChange={(e) => setTopic(e.target.value.slice(0, maxCharacters))}
               onKeyPress={handleKeyPress}
               placeholder="Describe your content idea... (e.g., '10 sustainable fashion tips for beginners')"
-              rows="3"
+              rows="4"
               className="w-full bg-gray-900/50 border-2 border-gray-700 rounded-xl px-5 py-4 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-spark-orange focus:border-transparent transition-all resize-none"
               disabled={loading || !user}
             />
@@ -401,6 +474,7 @@ const handleGenerate = async () => {
             <span className="text-xl">📱</span>
             Choose Platform
           </label>
+
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {Object.entries(platformInfo).map(([p, info]) => (
               <button
@@ -434,6 +508,7 @@ const handleGenerate = async () => {
               <span className="text-xl">▶️</span>
               YouTube Content Type
             </label>
+
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {youtubeTypes.map((type) => (
                 <button
@@ -468,6 +543,7 @@ const handleGenerate = async () => {
             <span className="text-xl">🎨</span>
             Select Style
           </label>
+
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             {Object.entries(styleInfo).map(([s, info]) => (
               <button
@@ -512,7 +588,7 @@ const handleGenerate = async () => {
             ) : (
               <>
                 <span className="text-2xl animate-bounce">⚡</span>
-                <span>Generate Content</span>
+                <span>Generate 5 Variations</span>
                 <span className="text-2xl">✨</span>
               </>
             )}
@@ -532,7 +608,7 @@ const handleGenerate = async () => {
             )}
           </p>
           <p className="text-gray-600 text-xs mt-2">
-            💡 Tip: Press Enter to generate instantly
+            💡 Tip: Press Enter to generate instantly • Now with 5 variations!
           </p>
         </div>
       </div>

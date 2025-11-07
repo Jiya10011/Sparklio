@@ -8,15 +8,19 @@ import {
   CheckCircle2,
   Sparkles,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  History,
+  Link2
 } from 'lucide-react';
 
-function ResultsDisplay({ result, onGenerateNew, onBack }) {
+function ResultsDisplay({ result, onGenerateNew, onBack, onViewHistory }) {
   const [copiedItem, setCopiedItem] = useState(null);
   const [isVisible, setIsVisible] = useState(false);
   const [savedToFavorites, setSavedToFavorites] = useState(false);
   const [currentVariation, setCurrentVariation] = useState(0);
   const [imageLoaded, setImageLoaded] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [shareUrl, setShareUrl] = useState('');
 
   const totalVariations = result.variations?.length || 1;
   const activeContent = result.variations?.[currentVariation] || result.variations?.[0];
@@ -63,22 +67,60 @@ function ResultsDisplay({ result, onGenerateNew, onBack }) {
     }
   };
 
-  // Share content
+  // Enhanced Share functionality
   const handleShare = async () => {
     const shareText = `${activeContent.hook}\n\n${activeContent.caption}`;
-
+    
     if (navigator.share) {
       try {
         await navigator.share({
           title: 'My Sparklio Content',
-          text: shareText
+          text: shareText,
+          url: window.location.href
         });
       } catch (error) {
-        console.log('Share cancelled');
+        if (error.name !== 'AbortError') {
+          console.log('Share cancelled or failed, showing modal');
+          setShowShareModal(true);
+        }
       }
     } else {
-      copyToClipboard(shareText, 'share');
+      setShowShareModal(true);
     }
+  };
+
+  // Generate shareable link (simulated)
+  const generateShareLink = () => {
+    // In a real app, you'd save this to a database and generate a unique URL
+    const encodedData = btoa(JSON.stringify({
+      topic: result.topic,
+      platform: result.platform,
+      variation: currentVariation
+    }));
+    const url = `${window.location.origin}/shared/${encodedData.slice(0, 12)}`;
+    setShareUrl(url);
+    return url;
+  };
+
+  // Share to specific platforms
+  const shareToTwitter = () => {
+    const text = encodeURIComponent(`${activeContent.hook}\n\nCreated with Sparklio ✨`);
+    window.open(`https://twitter.com/intent/tweet?text=${text}`, '_blank');
+  };
+
+  const shareToLinkedIn = () => {
+    const url = encodeURIComponent(window.location.href);
+    window.open(`https://www.linkedin.com/sharing/share-offsite/?url=${url}`, '_blank');
+  };
+
+  const shareToWhatsApp = () => {
+    const text = encodeURIComponent(`${activeContent.hook}\n\n${activeContent.caption}\n\nCreated with Sparklio ✨`);
+    window.open(`https://wa.me/?text=${text}`, '_blank');
+  };
+
+  const copyShareLink = () => {
+    const link = generateShareLink();
+    copyToClipboard(link, 'sharelink');
   };
 
   // Save to favorites
@@ -136,13 +178,24 @@ function ResultsDisplay({ result, onGenerateNew, onBack }) {
             </h1>
           </div>
 
-          <button
-            onClick={onGenerateNew}
-            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-spark-orange to-spark-pink rounded-xl text-white font-medium hover:scale-105 transition-all"
-          >
-            <RefreshCw className="w-4 h-4" />
-            <span className="hidden md:inline">New Content</span>
-          </button>
+          <div className="flex items-center gap-2">
+            {onViewHistory && (
+              <button
+                onClick={onViewHistory}
+                className="flex items-center gap-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-xl text-white transition-all"
+              >
+                <History className="w-4 h-4" />
+                <span className="hidden md:inline">History</span>
+              </button>
+            )}
+            <button
+              onClick={onGenerateNew}
+              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-spark-orange to-spark-pink rounded-xl text-white font-medium hover:scale-105 transition-all"
+            >
+              <RefreshCw className="w-4 h-4" />
+              <span className="hidden md:inline">New Content</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -293,7 +346,6 @@ function ResultsDisplay({ result, onGenerateNew, onBack }) {
                   onLoad={() => setImageLoaded(true)}
                   onError={(e) => {
                     console.error('Image failed to load:', result.imageUrl);
-                    // Fallback to placeholder
                     e.target.src = `https://placehold.co/1080x1080/FF6B35/FFFFFF?text=${encodeURIComponent(result.topic)}&font=montserrat`;
                     setImageLoaded(true);
                   }}
@@ -446,6 +498,74 @@ function ResultsDisplay({ result, onGenerateNew, onBack }) {
           </div>
         </div>
       </div>
+
+      {/* Share Modal */}
+      {showShareModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-8 max-w-md w-full shadow-2xl">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-2xl font-bold text-white flex items-center gap-2">
+                <Share2 className="w-6 h-6 text-spark-orange" />
+                Share Content
+              </h3>
+              <button
+                onClick={() => setShowShareModal(false)}
+                className="text-gray-400 hover:text-white text-2xl"
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Share Options */}
+            <div className="space-y-3 mb-6">
+              <button
+                onClick={shareToTwitter}
+                className="w-full flex items-center gap-3 p-4 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 rounded-xl transition-all"
+              >
+                <span className="text-2xl">🐦</span>
+                <span className="text-white font-medium">Share on Twitter</span>
+              </button>
+
+              <button
+                onClick={shareToLinkedIn}
+                className="w-full flex items-center gap-3 p-4 bg-blue-600/10 hover:bg-blue-600/20 border border-blue-600/30 rounded-xl transition-all"
+              >
+                <span className="text-2xl">💼</span>
+                <span className="text-white font-medium">Share on LinkedIn</span>
+              </button>
+
+              <button
+                onClick={shareToWhatsApp}
+                className="w-full flex items-center gap-3 p-4 bg-green-500/10 hover:bg-green-500/20 border border-green-500/30 rounded-xl transition-all"
+              >
+                <span className="text-2xl">💬</span>
+                <span className="text-white font-medium">Share on WhatsApp</span>
+              </button>
+            </div>
+
+            {/* Copy Link */}
+            <div className="border-t border-gray-700 pt-6">
+              <p className="text-gray-400 text-sm mb-3">Or copy link</p>
+              <button
+                onClick={copyShareLink}
+                className="w-full flex items-center justify-center gap-2 p-4 bg-gray-800 hover:bg-gray-700 rounded-xl transition-all"
+              >
+                {copiedItem === 'sharelink' ? (
+                  <>
+                    <CheckCircle2 className="w-5 h-5 text-green-400" />
+                    <span className="text-green-400 font-medium">Link Copied!</span>
+                  </>
+                ) : (
+                  <>
+                    <Link2 className="w-5 h-5 text-white" />
+                    <span className="text-white font-medium">Copy Share Link</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

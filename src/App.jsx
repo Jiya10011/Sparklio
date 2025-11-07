@@ -2,9 +2,10 @@ import { useState } from 'react';
 import LandingPage from './components/LandingPage';
 import GeneratorForm from './components/GeneratorForm';
 import ResultsDisplay from './components/ResultsDisplay';
+import HistoryView from './components/HistoryView';
 
 function App() {
-  const [currentView, setCurrentView] = useState('landing'); // 'landing', 'generator', 'results'
+  const [currentView, setCurrentView] = useState('landing'); // 'landing', 'generator', 'results', 'history'
   const [generatedResult, setGeneratedResult] = useState(null);
 
   const handleStartCreating = () => {
@@ -27,16 +28,32 @@ function App() {
     setGeneratedResult(null);
   };
 
+  const handleViewHistory = () => {
+    setCurrentView('history');
+    setGeneratedResult(null);
+  };
+
+  const handleLoadFromHistory = (result) => {
+    setGeneratedResult(result);
+    setCurrentView('results');
+  };
+
   // Render based on current view
   if (currentView === 'landing') {
-    return <LandingPage onStartCreating={handleStartCreating} />;
+    return (
+      <LandingPage 
+        onStartCreating={handleStartCreating}
+        onViewHistory={handleViewHistory}
+      />
+    );
   }
 
   if (currentView === 'generator') {
     return (
-      <GeneratorForm 
+      <GeneratorForm
         onBack={handleBackToHome}
         onResultsGenerated={handleResultsGenerated}
+        onViewHistory={handleViewHistory}
       />
     );
   }
@@ -47,12 +64,23 @@ function App() {
         result={generatedResult}
         onGenerateNew={handleGenerateNew}
         onBack={handleBackToHome}
+        onViewHistory={handleViewHistory}
+      />
+    );
+  }
+
+  if (currentView === 'history') {
+    return (
+      <HistoryView
+        onBack={handleBackToHome}
+        onLoadResult={handleLoadFromHistory}
+        onGenerateNew={handleGenerateNew}
       />
     );
   }
 
   // Fallback
-  return <LandingPage onStartCreating={handleStartCreating} />;
+  return <LandingPage onStartCreating={handleStartCreating} onViewHistory={handleViewHistory} />;
 }
 
 export default App;
