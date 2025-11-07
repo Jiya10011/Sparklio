@@ -1,34 +1,48 @@
-import { useState } from 'react';
-import { X, Key, Loader2, AlertCircle, CheckCircle2, ExternalLink } from 'lucide-react';
-import { saveUserApiKey } from '../services/userApiKeyService';
+import { useState } from "react";
+import { X, Key, Loader2, AlertCircle, CheckCircle2, ExternalLink } from "lucide-react";
+import { saveUserApiKey } from "../services/userApiKeyService";
 
 export default function ApiKeySetupModal({ isOpen, onClose, userId, onSuccess }) {
-  const [apiKey, setApiKey] = useState('');
+  const [apiKey, setApiKey] = useState("");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
   const [step, setStep] = useState(1); // 1: instructions, 2: input, 3: success
 
   if (!isOpen) return null;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
+    setError("");
     setLoading(true);
 
     try {
-      const result = await saveUserApiKey(userId, apiKey.trim());
+      console.log("🟢 Save API Key button clicked!");
+      console.log("User ID:", userId);
+      console.log("API Key entered:", apiKey);
 
-      if (result.success) {
+      if (!userId) {
+        setError("User ID is missing. Please log in again.");
+        setLoading(false);
+        return;
+      }
+
+      const result = await saveUserApiKey(userId, apiKey.trim());
+      console.log("Save API Key result:", result);
+
+      if (result === true || result?.success === true) {
+        console.log("✅ API key successfully saved to Firestore!");
         setStep(3);
         setTimeout(() => {
-          onSuccess();
-          onClose();
+          onSuccess?.();
+          onClose?.();
         }, 2000);
       } else {
-        setError(result.error);
+        console.warn("⚠️ Save API key returned error:", result);
+        setError(result?.error || "Failed to save API key.");
       }
     } catch (err) {
-      setError('Failed to save API key. Please try again.');
+      console.error("❌ Error saving API key:", err);
+      setError("Failed to save API key. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -37,7 +51,7 @@ export default function ApiKeySetupModal({ isOpen, onClose, userId, onSuccess })
   return (
     <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className="bg-dark-surface border border-gray-700 rounded-2xl max-w-2xl w-full p-8 relative animate-fade-in max-h-[90vh] overflow-y-auto">
-        
+
         {/* Close Button */}
         {step !== 3 && (
           <button
@@ -55,9 +69,7 @@ export default function ApiKeySetupModal({ isOpen, onClose, userId, onSuccess })
               <div className="w-16 h-16 bg-gradient-to-r from-spark-orange to-spark-pink rounded-full flex items-center justify-center mx-auto mb-4">
                 <Key className="w-8 h-8 text-white" />
               </div>
-              <h2 className="text-3xl font-bold text-white mb-2">
-                Get Your Free API Key
-              </h2>
+              <h2 className="text-3xl font-bold text-white mb-2">Get Your Free API Key</h2>
               <p className="text-gray-400">
                 Sparklio uses your personal Gemini API key. Takes 1 minute!
               </p>
@@ -81,13 +93,15 @@ export default function ApiKeySetupModal({ isOpen, onClose, userId, onSuccess })
               {/* Steps */}
               <div className="space-y-4">
                 <h3 className="text-white font-semibold">How to Get Your Key:</h3>
-                
+
                 <div className="flex gap-4">
-                  <div className="w-8 h-8 bg-spark-orange rounded-full flex items-center justify-center flex-shrink-0 font-bold text-white">1</div>
+                  <div className="w-8 h-8 bg-spark-orange rounded-full flex items-center justify-center font-bold text-white">
+                    1
+                  </div>
                   <div>
                     <p className="text-white font-medium">Go to Google AI Studio</p>
-                    <a 
-                      href="https://aistudio.google.com/app/apikey" 
+                    <a
+                      href="https://aistudio.google.com/app/apikey"
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-spark-orange hover:text-spark-pink transition-colors flex items-center gap-1 text-sm mt-1"
@@ -98,7 +112,9 @@ export default function ApiKeySetupModal({ isOpen, onClose, userId, onSuccess })
                 </div>
 
                 <div className="flex gap-4">
-                  <div className="w-8 h-8 bg-spark-orange rounded-full flex items-center justify-center flex-shrink-0 font-bold text-white">2</div>
+                  <div className="w-8 h-8 bg-spark-orange rounded-full flex items-center justify-center font-bold text-white">
+                    2
+                  </div>
                   <div>
                     <p className="text-white font-medium">Click "Get API Key"</p>
                     <p className="text-gray-400 text-sm mt-1">
@@ -108,7 +124,9 @@ export default function ApiKeySetupModal({ isOpen, onClose, userId, onSuccess })
                 </div>
 
                 <div className="flex gap-4">
-                  <div className="w-8 h-8 bg-spark-orange rounded-full flex items-center justify-center flex-shrink-0 font-bold text-white">3</div>
+                  <div className="w-8 h-8 bg-spark-orange rounded-full flex items-center justify-center font-bold text-white">
+                    3
+                  </div>
                   <div>
                     <p className="text-white font-medium">Copy the key</p>
                     <p className="text-gray-400 text-sm mt-1">
@@ -118,7 +136,9 @@ export default function ApiKeySetupModal({ isOpen, onClose, userId, onSuccess })
                 </div>
 
                 <div className="flex gap-4">
-                  <div className="w-8 h-8 bg-spark-orange rounded-full flex items-center justify-center flex-shrink-0 font-bold text-white">4</div>
+                  <div className="w-8 h-8 bg-spark-orange rounded-full flex items-center justify-center font-bold text-white">
+                    4
+                  </div>
                   <div>
                     <p className="text-white font-medium">Paste it here</p>
                     <p className="text-gray-400 text-sm mt-1">
@@ -149,13 +169,9 @@ export default function ApiKeySetupModal({ isOpen, onClose, userId, onSuccess })
               <div className="w-16 h-16 bg-gradient-to-r from-spark-orange to-spark-pink rounded-full flex items-center justify-center mx-auto mb-4">
                 <Key className="w-8 h-8 text-white" />
               </div>
-              <h2 className="text-3xl font-bold text-white mb-2">
-                Enter Your API Key
-              </h2>
-              <p className="text-gray-400">
-                Paste the key from Google AI Studio
-              </p>
-              </div>
+              <h2 className="text-3xl font-bold text-white mb-2">Enter Your API Key</h2>
+              <p className="text-gray-400">Paste the key from Google AI Studio</p>
+            </div>
 
             {error && (
               <div className="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded-xl flex items-start gap-3">
@@ -190,8 +206,7 @@ export default function ApiKeySetupModal({ isOpen, onClose, userId, onSuccess })
                 <p className="text-blue-200 text-sm flex items-start gap-2">
                   <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
                   <span>
-                    <strong>Privacy:</strong> Your API key is encrypted before storage. 
-                    We never see or use your key. It stays private.
+                    <strong>Privacy:</strong> Your API key is encrypted before storage. We never see or use your key. It stays private.
                   </span>
                 </p>
               </div>
@@ -216,7 +231,7 @@ export default function ApiKeySetupModal({ isOpen, onClose, userId, onSuccess })
                       Verifying...
                     </>
                   ) : (
-                    'Save API Key'
+                    "Save API Key"
                   )}
                 </button>
               </div>
@@ -230,9 +245,7 @@ export default function ApiKeySetupModal({ isOpen, onClose, userId, onSuccess })
             <div className="w-20 h-20 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-6 animate-bounce">
               <CheckCircle2 className="w-12 h-12 text-white" />
             </div>
-            <h2 className="text-3xl font-bold text-white mb-3">
-              All Set! 🎉
-            </h2>
+            <h2 className="text-3xl font-bold text-white mb-3">All Set! 🎉</h2>
             <p className="text-gray-400 mb-6">
               Your API key is saved securely. You're ready to generate!
             </p>
