@@ -1,15 +1,12 @@
 import { useState, useEffect } from 'react';
 import { auth } from '../config/firebase';
-import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
+import { signInWithPopup } from 'firebase/auth';
+import { googleProvider } from '../config/firebase';
 import { generateContent } from '../services/geminiService';
 import { generateImage } from '../services/imageService';
 import { getUserApiKey } from '../services/userApiKeyService';
 import ApiKeySetupModal from './ApiKeySetupModal';
-import LoadingAnimation from './LoadingAnimation';
 import { LogIn } from 'lucide-react';
-
-// Initialize Google provider
-const googleProvider = new GoogleAuthProvider();
 
 function GeneratorForm({ onBack, onResultsGenerated }) {
   // State management
@@ -79,6 +76,8 @@ function GeneratorForm({ onBack, onResultsGenerated }) {
         setHasApiKey(keyResult.success);
         
         console.log('🔑 Has API key:', keyResult.success);
+        
+        // Don't auto-show modal on mount, only when trying to generate
       }
     });
 
@@ -106,105 +105,108 @@ function GeneratorForm({ onBack, onResultsGenerated }) {
     }
   };
 
-  // Handle content generation WITH 3 VARIATIONS
-  const handleGenerate = async () => {
+  // Handle content generation
+const handleGenerate = async () => {
+  setError(null);
+
+  // Check if user is signed in
+  if (!user) {
+    setError('Please sign in to generate content');
+    return;
+  }
+
+  // Input validation
+  if (!topic.trim()) {
+    setError('Please enter a topic! ✨');
+    return;
+  }
+
+  if (topic.trim().length < 5) {
+    setError('Topic too short - add more details (at least 5 characters)');
+    return;
+  }
+
+  if (topic.length > 200) {
+    setError('Topic too long - keep it under 200 characters');
+    return;
+  }
+
+  setLoading(true);
+  console.log('🚀 Starting generation...');
+
+  try {
+    // Step 1: Generate 3 variations of text content
+    setLoadingMessage('🎯 Crafting viral hooks...');
+    console.log('📝 Step 1: Generating 3 content variations...');
+    
+    // Generate 3 variations in parallel
+    const contentVariations = await Promise.all([
+      generateContent(topic, platform, style, youtubeType, user.uid),
+      generateContent(topic, platform, style, youtubeType, user.uid),
+      generateContent(topic, platform, style, youtubeType, user.uid)
+    ]);
+    
+    console.log('✅ All 3 variations generated');
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    // Step 2: Generate image for the first variation
+    setLoadingMessage('🎨 Generating image concepts...');
+    console.log('🎨 Step 2: Generating image...');
+    
+    const imageUrl = await generateImage(contentVariations[0].stylePrompt, topic);
+    console.log('✅ Image generated:', imageUrl);
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    // Step 3: Prepare final result with variations
+    setLoadingMessage('✨ Finalizing your content...');
+    
+    const result = {
+      // Format expected by ResultsDisplay
+      variations: contentVariations.map((content, index) => ({
+        ...content,
+        id: `variation-${index + 1}`,
+        variationNumber: index + 1
+      })),
+      imageUrl,
+      topic,
+      platform,
+      style,
+      youtubeType: platform === 'youtube' ? youtubeType : null,
+      timestamp: new Date().toISOString(),
+      id: `sparklio-${Date.now()}`
+    };
+    
+    // Save to localStorage history
+    saveToHistory(result);
+    
+    console.log('🎉 Generation complete!');
+    console.log('Result with 3 variations:', result);
+    
+    // Show results
+    if (onResultsGenerated) {
+      onResultsGenerated(result);
+    }
+    
     setError(null);
-
-    // Check if user is signed in
-    if (!user) {
-      setError('Please sign in to generate content');
+    
+  } catch (error) {
+    console.error('❌ Generation failed:', error);
+    
+    // Handle special error: needs API key
+    if (error.message === 'NEED_API_KEY') {
+      setShowApiKeyModal(true);
+      setError('Please add your Gemini API key to continue');
       return;
     }
-
-    // Input validation
-    if (!topic.trim()) {
-      setError('Please enter a topic! ✨');
-      return;
-    }
-
-    if (topic.trim().length < 5) {
-      setError('Topic too short - add more details (at least 5 characters)');
-      return;
-    }
-
-    if (topic.length > 100) {
-      setError('Topic too long - keep it under 100 characters');
-      return;
-    }
-
-    setLoading(true);
-    console.log('🚀 Starting generation...');
-
-    try {
-      // Step 1: Generate 3 variations of content
-      setLoadingMessage('🎯 Crafting 3 viral variations...');
-      console.log('📝 Step 1: Generating 3 content variations...');
-      
-      const contentVariations = await Promise.all([
-        generateContent(topic, platform, style, youtubeType, user.uid),
-        generateContent(topic, platform, style, youtubeType, user.uid),
-        generateContent(topic, platform, style, youtubeType, user.uid)
-      ]);
-      
-      console.log('✅ All 3 variations generated');
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      // Step 2: Generate image
-      setLoadingMessage('🎨 Generating stunning visual...');
-      console.log('🎨 Step 2: Generating image...');
-      
-      const imageUrl = await generateImage(contentVariations[0].stylePrompt, topic);
-      console.log('✅ Image generated:', imageUrl);
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      // Step 3: Prepare result with variations
-      setLoadingMessage('✨ Finalizing your content...');
-      
-      const result = {
-        variations: contentVariations.map((content, index) => ({
-          ...content,
-          id: `variation-${index + 1}`,
-          variationNumber: index + 1
-        })),
-        imageUrl,
-        topic,
-        platform,
-        style,
-        youtubeType: platform === 'youtube' ? youtubeType : null,
-        timestamp: new Date().toISOString(),
-        id: `sparklio-${Date.now()}`
-      };
-      
-      // Save to history
-      saveToHistory(result);
-      
-      console.log('🎉 Generation complete!');
-      console.log('Result with 3 variations:', result);
-      
-      // Show results
-      if (onResultsGenerated) {
-        onResultsGenerated(result);
-      }
-      
-      setError(null);
-      
-    } catch (error) {
-      console.error('❌ Generation failed:', error);
-      
-      // Handle special error: needs API key
-      if (error.message === 'NEED_API_KEY' || error.message.includes('add your Gemini API key')) {
-        setShowApiKeyModal(true);
-        setError('Please add your Gemini API key to continue');
-        return;
-      }
-      
-      setError(error.message || 'Generation failed - please try again');
-      
-    } finally {
-      setLoading(false);
-      setLoadingMessage('');
-    }
-  };
+    
+    setError(error.message || 'Generation failed - please try again');
+    
+  } finally {
+    setLoading(false);
+    setLoadingMessage('');
+    console.log('✨ Generation process finished');
+  }
+};
 
   // Save to history
   const saveToHistory = (result) => {
@@ -235,9 +237,6 @@ function GeneratorForm({ onBack, onResultsGenerated }) {
 
   return (
     <div className="min-h-screen bg-dark-bg relative overflow-hidden">
-      {/* Loading Animation */}
-      {loading && <LoadingAnimation message={loadingMessage} />}
-
       {/* Animated Background */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-20 left-10 w-64 h-64 bg-spark-orange/10 rounded-full blur-3xl animate-pulse"></div>
@@ -302,7 +301,7 @@ function GeneratorForm({ onBack, onResultsGenerated }) {
         </div>
       </div>
 
-      {/* Main Content - REST OF YOUR CODE STAYS THE SAME */}
+      {/* Main Content */}
       <div className="relative z-10 max-w-4xl mx-auto px-4 py-8">
         
         {/* Progress Indicator */}
@@ -352,10 +351,152 @@ function GeneratorForm({ onBack, onResultsGenerated }) {
           </div>
         )}
 
-        {/* REST OF YOUR FORM CODE - Topic Input, Platform Selector, etc. */}
-        {/* Keep all your existing form JSX here... */}
+        {/* Topic Input Card */}
+        <div className="bg-gradient-to-br from-dark-surface/90 to-dark-surface/50 backdrop-blur-xl rounded-2xl p-8 mb-6 border border-spark-orange/20 shadow-2xl">
+          <label className="block text-spark-orange text-sm font-semibold mb-4 uppercase tracking-wider flex items-center gap-2">
+            <span className="text-xl">✨</span>
+            What's Your Spark?
+          </label>
+          
+          <div className="relative">
+            <textarea
+              value={topic}
+              onChange={(e) => setTopic(e.target.value.slice(0, maxCharacters))}
+              onKeyPress={handleKeyPress}
+              placeholder="Describe your content idea... (e.g., '10 sustainable fashion tips for beginners')"
+              rows="3"
+              className="w-full bg-gray-900/50 border-2 border-gray-700 rounded-xl px-5 py-4 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-spark-orange focus:border-transparent transition-all resize-none"
+              disabled={loading || !user}
+            />
+            <div className="absolute bottom-3 right-3 text-xs">
+              <span className={characterCount > maxCharacters * 0.9 ? 'text-spark-orange font-bold' : 'text-gray-500'}>
+                {characterCount}/{maxCharacters}
+              </span>
+            </div>
+          </div>
 
-        {/* Generate Button - UPDATE TEXT */}
+          {/* Trending Topics */}
+          <div className="mt-4">
+            <p className="text-xs text-gray-500 mb-2 flex items-center gap-2">
+              <span>🔥</span> Trending now:
+            </p>
+            <div className="flex gap-2 flex-wrap">
+              {trendingTopics.map((trending, index) => (
+                <button
+                  key={index}
+                  onClick={() => setTopic(trending)}
+                  disabled={loading || !user}
+                  className="text-xs bg-gray-800/50 hover:bg-gray-700/50 text-gray-300 px-3 py-1.5 rounded-full border border-gray-700 hover:border-spark-orange/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {trending}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Platform Selector */}
+        <div className="bg-gradient-to-br from-dark-surface/90 to-dark-surface/50 backdrop-blur-xl rounded-2xl p-8 mb-6 border border-spark-orange/20 shadow-2xl">
+          <label className="block text-spark-orange text-sm font-semibold mb-4 uppercase tracking-wider flex items-center gap-2">
+            <span className="text-xl">📱</span>
+            Choose Platform
+          </label>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {Object.entries(platformInfo).map(([p, info]) => (
+              <button
+                key={p}
+                onClick={() => setPlatform(p)}
+                disabled={loading}
+                className={`relative group p-6 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
+                  platform === p
+                    ? 'bg-gradient-to-br ' + info.color + ' shadow-lg scale-105'
+                    : 'bg-gray-800/50 hover:bg-gray-700/50 border border-gray-700'
+                }`}
+              >
+                <div className="text-4xl mb-2">{info.emoji}</div>
+                <div className={`text-sm font-medium capitalize ${
+                  platform === p ? 'text-white' : 'text-gray-300'
+                }`}>
+                  {p}
+                </div>
+                {platform === p && (
+                  <div className="absolute top-2 right-2 w-3 h-3 bg-white rounded-full animate-pulse"></div>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* YouTube Content Type */}
+        {platform === 'youtube' && (
+          <div className="bg-gradient-to-br from-red-500/10 to-red-500/5 backdrop-blur-xl rounded-2xl p-8 mb-6 border border-red-500/30 shadow-2xl">
+            <label className="block text-red-400 text-sm font-semibold mb-4 uppercase tracking-wider flex items-center gap-2">
+              <span className="text-xl">▶️</span>
+              YouTube Content Type
+            </label>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {youtubeTypes.map((type) => (
+                <button
+                  key={type.id}
+                  onClick={() => setYoutubeType(type.id)}
+                  disabled={loading}
+                  className={`p-4 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
+                    youtubeType === type.id
+                      ? 'bg-gradient-to-br from-red-500 to-red-600 shadow-lg scale-105 border-2 border-white/20'
+                      : 'bg-gray-800/50 hover:bg-gray-700/50 border border-gray-700 hover:border-red-500/30'
+                  }`}
+                >
+                  <div className={`text-sm font-medium mb-1 ${
+                    youtubeType === type.id ? 'text-white' : 'text-gray-300'
+                  }`}>
+                    {type.label}
+                  </div>
+                  <div className={`text-xs ${
+                    youtubeType === type.id ? 'text-white/80' : 'text-gray-500'
+                  }`}>
+                    {type.desc}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Style Selector */}
+        <div className="bg-gradient-to-br from-dark-surface/90 to-dark-surface/50 backdrop-blur-xl rounded-2xl p-8 mb-6 border border-spark-orange/20 shadow-2xl">
+          <label className="block text-spark-orange text-sm font-semibold mb-4 uppercase tracking-wider flex items-center gap-2">
+            <span className="text-xl">🎨</span>
+            Select Style
+          </label>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            {Object.entries(styleInfo).map(([s, info]) => (
+              <button
+                key={s}
+                onClick={() => setStyle(s)}
+                disabled={loading}
+                className={`group relative p-4 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
+                  style === s
+                    ? 'bg-gradient-to-br from-spark-orange to-spark-pink shadow-lg scale-105 border-2 border-white/20'
+                    : 'bg-gray-800/50 hover:bg-gray-700/50 border border-gray-700 hover:border-spark-orange/30'
+                }`}
+              >
+                <div className="text-3xl mb-2">{info.emoji}</div>
+                <div className={`text-sm font-medium capitalize mb-1 ${
+                  style === s ? 'text-white' : 'text-gray-300'
+                }`}>
+                  {s}
+                </div>
+                <div className={`text-xs ${
+                  style === s ? 'text-white/80' : 'text-gray-500'
+                }`}>
+                  {info.desc}
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Generate Button */}
         <div className="relative">
           <div className={`absolute -inset-1 bg-gradient-to-r from-spark-orange via-spark-pink to-frame-purple rounded-xl blur opacity-50 transition duration-1000 ${loading ? 'animate-pulse' : ''}`}></div>
           <button
@@ -371,7 +512,7 @@ function GeneratorForm({ onBack, onResultsGenerated }) {
             ) : (
               <>
                 <span className="text-2xl animate-bounce">⚡</span>
-                <span>Generate 3 Variations</span>
+                <span>Generate Content</span>
                 <span className="text-2xl">✨</span>
               </>
             )}
@@ -383,7 +524,7 @@ function GeneratorForm({ onBack, onResultsGenerated }) {
           <p className="text-gray-500 text-sm flex items-center justify-center gap-2">
             <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
             {user && hasApiKey ? (
-              'Using your personal API key • 3 variations per generation'
+              'Using your personal API key • Unlimited generations'
             ) : user ? (
               'Add API key for unlimited generations'
             ) : (
