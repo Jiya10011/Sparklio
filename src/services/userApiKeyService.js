@@ -11,7 +11,7 @@ async function testApiKey(apiKey) {
     console.log('🧪 Testing API key...');
     
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
     
     const result = await model.generateContent("Say 'connected' if you can read this");
     const text = await result.response.text();
