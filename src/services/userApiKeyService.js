@@ -1,5 +1,6 @@
 import { doc, setDoc, getDoc } from "firebase/firestore";
-import { db } from "../firebase";
+import { db } from '../../firebase';
+
 import { encryptApiKey, decryptApiKey, validateApiKeyFormat } from "./encryptionService";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
