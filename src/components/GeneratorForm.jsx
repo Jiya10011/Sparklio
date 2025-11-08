@@ -6,7 +6,7 @@ import { generateContent } from '../services/geminiService';
 import { generateImage } from '../services/imageService';
 import { getUserApiKey } from '../services/userApiKeyService';
 import ApiKeySetupModal from './ApiKeySetupModal';
-import { LogIn, LogOut, Menu, History, ChevronDown, X, User, Lightbulb } from 'lucide-react';
+import { LogIn, LogOut, Menu, History, X, User, Lightbulb } from 'lucide-react';
 import ContentTemplates from './ContentTemplates';
 
 function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
@@ -25,7 +25,7 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
   const [showApiKeyModal, setShowApiKeyModal] = useState(false);
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [showUserMenu, setShowUserMenu] = useState(false);
-  const [showTemplates, setShowTemplates] = useState(false); // NEW: Templates modal state
+  const [showTemplates, setShowTemplates] = useState(false); // Templates modal state
 
   // Trending topics
   const trendingTopics = [
@@ -145,6 +145,7 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
       return;
     }
 
+    // FIXED: Dynamic error message using maxCharacters variable
     if (topic.length > maxCharacters) {
       setError(`Topic too long - keep it under ${maxCharacters} characters`);
       return;
@@ -341,8 +342,8 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
                   </div>
                 )}
                 <div className="flex-1 min-w-0">
-                  <p className="text-white font-semibold text-lg truncate">{user.displayName || 'User'}</p>
-                  <p className="text-gray-400 text-sm truncate">{user.email}</p>
+                  <p className="text-white font-semibold text-lg truncate">{user?.displayName || 'User'}</p>
+                  <p className="text-gray-400 text-sm truncate">{user?.email}</p>
                 </div>
               </div>
 
@@ -673,7 +674,10 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
       {/* Content Templates Modal - NEW! */}
       {showTemplates && (
         <ContentTemplates
-          onSelectTemplate={(prompt) => setTopic(prompt)}
+          onSelectTemplate={(prompt) => {
+            setTopic(prompt);
+            setShowTemplates(false);
+          }}
           onClose={() => setShowTemplates(false)}
         />
       )}
