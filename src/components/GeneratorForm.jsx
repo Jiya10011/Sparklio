@@ -6,8 +6,9 @@ import { generateContent } from '../services/geminiService';
 import { generateImage } from '../services/imageService';
 import { getUserApiKey } from '../services/userApiKeyService';
 import ApiKeySetupModal from './ApiKeySetupModal';
-import { LogIn, LogOut, Menu, History, X, User, Lightbulb } from 'lucide-react';
+import { LogIn, LogOut, Menu, History, X, User, Lightbulb, BarChart3 } from 'lucide-react';
 import ContentTemplates from './ContentTemplates';
+import ApiUsageDashboard from './ApiUsageDashboard';
 
 function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
   // State management
@@ -26,7 +27,7 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
-  const [showUsageDashboard, setShowUsageDashboard] = useState(false); // NEW: Usage dashboard state
+  const [showUsageDashboard, setShowUsageDashboard] = useState(false);
 
   // Trending topics
   const trendingTopics = [
@@ -62,7 +63,7 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
     { id: 'thumbnail', label: 'Thumbnail Idea', desc: 'Text concepts' }
   ];
 
-  // Character counter - INCREASED TO 1000
+  // Character counter
   const characterCount = topic.length;
   const maxCharacters = 1000;
 
@@ -74,8 +75,6 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
 
       if (currentUser) {
         console.log('✅ User logged in:', currentUser.uid);
-        
-        // Check if user has API key
         const keyResult = await getUserApiKey(currentUser.uid);
         setHasApiKey(keyResult.success);
         console.log('🔑 Has API key:', keyResult.success);
@@ -92,7 +91,6 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
       const result = await signInWithPopup(auth, googleProvider);
       console.log('✅ Signed in:', result.user.uid);
       
-      // Check if they have API key
       const keyResult = await getUserApiKey(result.user.uid);
       setHasApiKey(keyResult.success);
       
@@ -127,7 +125,7 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
     }
   };
 
-  // Handle content generation with 5 VARIATIONS
+  // Handle content generation
   const handleGenerate = async () => {
     setError(null);
 
@@ -146,7 +144,6 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
       return;
     }
 
-    // FIXED: This checks if topic is LONGER than maxCharacters
     if (topic.length > maxCharacters) {
       setError(`Topic too long - keep it under ${maxCharacters} characters`);
       return;
@@ -195,7 +192,6 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
       };
 
       saveToHistory(result);
-
       console.log('🎉 Generation complete!');
 
       if (onResultsGenerated) {
@@ -291,8 +287,6 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
                 ) : (
                   <User className="w-6 h-6 text-gray-400" />
                 )}
-        {/* API Usage Banner */}
-        {user && <ApiUsageBanner />}
                 <Menu className="w-4 h-4 text-gray-400" />
               </button>
             ) : (
@@ -308,18 +302,15 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
         </div>
       </div>
 
-      {/* MODAL-STYLE USER MENU - Always on top! */}
+      {/* User Menu Modal */}
       {showUserMenu && (
         <>
-          {/* Backdrop */}
           <div 
             className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9998]"
             onClick={() => setShowUserMenu(false)}
           ></div>
 
-          {/* Menu Panel - Slides in from right like a sidebar */}
           <div className="fixed top-0 right-0 h-full w-80 bg-gray-900 shadow-2xl z-[9999] animate-slide-in-right border-l border-gray-700">
-            {/* Header */}
             <div className="p-6 border-b border-gray-700 flex items-center justify-between">
               <h3 className="text-xl font-bold text-white">Account</h3>
               <button
@@ -330,10 +321,9 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
               </button>
             </div>
 
-            {/* User Info Section */}
             <div className="p-6 border-b border-gray-700">
               <div className="flex items-start gap-4">
-                {user.photoURL ? (
+                {user?.photoURL ? (
                   <img
                     src={user.photoURL}
                     alt="Profile"
@@ -350,7 +340,6 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
                 </div>
               </div>
 
-              {/* API Key Status */}
               <div className="mt-4 p-3 bg-gray-800/50 rounded-lg">
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-gray-400">API Key Status</span>
@@ -374,7 +363,6 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
               </div>
             </div>
 
-            {/* Menu Items */}
             <div className="p-4">
               <button
                 onClick={() => {
@@ -419,7 +407,6 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
               </button>
             </div>
 
-            {/* Footer */}
             <div className="absolute bottom-0 left-0 right-0 p-6 border-t border-gray-700">
               <p className="text-xs text-gray-500 text-center">
                 Sparklio v1.0 • Made with ✨
@@ -445,7 +432,7 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
 
         {/* Error Message */}
         {error && (
-          <div className="mb-6 bg-red-500/10 border border-red-500/30 rounded-xl p-4 flex items-start gap-3 animate-fade-in">
+          <div className="mb-6 bg-red-500/10 border border-red-500/30 rounded-xl p-4 flex items-start gap-3">
             <span className="text-2xl">⚠️</span>
             <div className="flex-1">
               <p className="text-red-400 font-medium">Error</p>
@@ -525,7 +512,7 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
             </div>
           </div>
 
-          {/* Browse Templates Button - NEW! */}
+          {/* Browse Templates Button */}
           <button
             onClick={() => setShowTemplates(true)}
             disabled={loading || !user}
