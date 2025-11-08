@@ -61,9 +61,9 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
     { id: 'thumbnail', label: 'Thumbnail Idea', desc: 'Text concepts' }
   ];
 
-  // Character counter
+  // Character counter - INCREASED TO 1000
   const characterCount = topic.length;
-  const maxCharacters = 300;
+  const maxCharacters = 1000;
 
   // Check auth & API key on mount
   useEffect(() => {
@@ -470,8 +470,8 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
               value={topic}
               onChange={(e) => setTopic(e.target.value.slice(0, maxCharacters))}
               onKeyPress={handleKeyPress}
-              placeholder="Describe your content idea in detail... (up to 300 characters - that's about 50-60 words!)"
-              rows="5"
+              placeholder="Describe your content idea in detail... (up to 1000 characters - write as much as you need!)"
+              rows="8"
               className="w-full bg-gray-900/50 border-2 border-gray-700 rounded-xl px-5 py-4 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-spark-orange focus:border-transparent transition-all resize-none"
               disabled={loading || !user}
             />
@@ -483,7 +483,7 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
           </div>
 
           <p className="text-xs text-gray-500 mt-2">
-            💡 Tip: Be specific! Include your target audience, tone, and key message for best results.
+            💡 Tip: More detail = better results! Include your target audience, tone, key points, and call-to-action.
           </p>
 
           {/* Trending Topics */}
@@ -657,7 +657,7 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
             )}
           </p>
           <p className="text-gray-600 text-xs mt-2">
-            💡 Up to 300 characters (≈50-60 words) • Press Enter to generate • 5 variations per generation
+            💡 Up to 1000 characters (≈150-200 words) • Press Enter to generate • 5 variations per generation
           </p>
         </div>
       </div>
