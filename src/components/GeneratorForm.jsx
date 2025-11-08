@@ -25,7 +25,8 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
   const [showApiKeyModal, setShowApiKeyModal] = useState(false);
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [showUserMenu, setShowUserMenu] = useState(false);
-  const [showTemplates, setShowTemplates] = useState(false); // Templates modal state
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [showUsageDashboard, setShowUsageDashboard] = useState(false); // NEW: Usage dashboard state
 
   // Trending topics
   const trendingTopics = [
@@ -145,7 +146,7 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
       return;
     }
 
-    // FIXED: Dynamic error message using maxCharacters variable
+    // FIXED: This checks if topic is LONGER than maxCharacters
     if (topic.length > maxCharacters) {
       setError(`Topic too long - keep it under ${maxCharacters} characters`);
       return;
@@ -290,6 +291,8 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
                 ) : (
                   <User className="w-6 h-6 text-gray-400" />
                 )}
+        {/* API Usage Banner */}
+        {user && <ApiUsageBanner />}
                 <Menu className="w-4 h-4 text-gray-400" />
               </button>
             ) : (
@@ -374,8 +377,24 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
             {/* Menu Items */}
             <div className="p-4">
               <button
-                onClick={handleViewHistory}
+                onClick={() => {
+                  setShowUserMenu(false);
+                  setShowUsageDashboard(true);
+                }}
                 className="w-full flex items-center gap-4 px-4 py-4 hover:bg-gray-800 rounded-xl transition-all text-left group"
+              >
+                <div className="w-10 h-10 bg-purple-500/20 rounded-lg flex items-center justify-center group-hover:bg-purple-500/30 transition-colors">
+                  <BarChart3 className="w-5 h-5 text-purple-400" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-white font-medium">API Usage</p>
+                  <p className="text-gray-400 text-xs">Monitor your limits</p>
+                </div>
+              </button>
+
+              <button
+                onClick={handleViewHistory}
+                className="w-full flex items-center gap-4 px-4 py-4 hover:bg-gray-800 rounded-xl transition-all text-left group mt-2"
               >
                 <div className="w-10 h-10 bg-blue-500/20 rounded-lg flex items-center justify-center group-hover:bg-blue-500/30 transition-colors">
                   <History className="w-5 h-5 text-blue-400" />
@@ -671,7 +690,7 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
         onSuccess={handleApiKeySuccess}
       />
 
-      {/* Content Templates Modal - NEW! */}
+      {/* Content Templates Modal */}
       {showTemplates && (
         <ContentTemplates
           onSelectTemplate={(prompt) => {
@@ -679,6 +698,13 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
             setShowTemplates(false);
           }}
           onClose={() => setShowTemplates(false)}
+        />
+      )}
+
+      {/* API Usage Dashboard Modal */}
+      {showUsageDashboard && (
+        <ApiUsageDashboard
+          onClose={() => setShowUsageDashboard(false)}
         />
       )}
 

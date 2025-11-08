@@ -1,5 +1,6 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { getUserApiKey, updateApiKeyStatus } from "./userApiKeyService";
+import { rateLimiter } from "./rateLimiter";
 
 /** Retry logic for temporary API/network errors */
 async function retryWithBackoff(fn, maxRetries = 3) {
@@ -121,7 +122,7 @@ function validateInput(topic, platform) {
   return true;
 }
 
-/** ✅ MAIN FUNCTION */
+/** ✅ MAIN FUNCTION - WITH RATE LIMITING */
 export async function generateContent(topic, platform = "instagram", style = "minimal", youtubeType = "short", userId = null) {
   try {
     validateInput(topic, platform);
@@ -129,27 +130,53 @@ export async function generateContent(topic, platform = "instagram", style = "mi
 
     // 🔑 Get user API key
     let apiKey;
+    let isUserKey = false;
+    
     if (userId) {
       const keyResult = await getUserApiKey(userId);
-      if (!keyResult.success) {
-        if (keyResult.needsKey) throw new Error("NEED_API_KEY");
-        throw new Error(keyResult.error || "Failed to get API key");
+      if (keyResult.success) {
+        apiKey = keyResult.apiKey;
+        isUserKey = true;
+        console.log('✅ Using user\'s API key');
+      } else {
+        // Fallback to environment key if user doesn't have one
+        apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+        console.log('⚠️ Using fallback API key (add your own for unlimited access)');
       }
-      apiKey = keyResult.apiKey;
     } else {
       apiKey = import.meta.env.VITE_GEMINI_API_KEY;
     }
 
-    if (!apiKey) throw new Error("Missing API key");
+    if (!apiKey) throw new Error("NEED_API_KEY");
 
-    const genAI = new GoogleGenerativeAI(apiKey);
+    // 📊 Check rate limits ONLY if using environment key (not user's key)
+    if (!isUserKey) {
+      const stats = rateLimiter.getUsageStats();
+      console.log('📊 API Usage:', stats);
+      
+      // Show warning if close to limit
+      if (stats.daily.remaining < 50) {
+        console.warn(`⚠️ Only ${stats.daily.remaining} requests remaining today!`);
+      }
+      
+      // Block if over limit
+      if (stats.daily.used >= stats.daily.limit) {
+        throw new Error(
+          `🚫 Daily API limit reached (${stats.daily.used}/${stats.daily.limit}). ` +
+          `Resets at midnight PT. Add your own API key for unlimited access!`
+        );
+      }
+    }
 
-    const platformGuide = platformGuidelines[platform];
-    const styleGuide = styleGuidelines[style];
-    const ytGuide = platform === "youtube" ? youtubeContentTypes[youtubeType] : null;
+    // 🎯 Create the API call function
+    const makeApiCall = async () => {
+      const genAI = new GoogleGenerativeAI(apiKey);
+      const platformGuide = platformGuidelines[platform];
+      const styleGuide = styleGuidelines[style];
+      const ytGuide = platform === "youtube" ? youtubeContentTypes[youtubeType] : null;
 
-    // 🧾 Create a clear structured prompt
-    const prompt = `
+      // 🧾 Create a clear structured prompt
+      const prompt = `
 You are an expert ${platform} content creator specializing in viral, engaging posts.
 Create content about "${topic}"
 
@@ -174,39 +201,53 @@ Return JSON:
   "stylePrompt": "..."
 }`;
 
-    // 🧠 Generate content (with retry)
-    const resultText = await retryWithBackoff(async () => {
-      const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
-      const response = await model.generateContent(prompt);
-      return await response.response.text();
-    });
+      // 🧠 Generate content (with retry)
+      const resultText = await retryWithBackoff(async () => {
+        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
+        const response = await model.generateContent(prompt);
+        return await response.response.text();
+      });
 
-    console.log("✅ Raw response:", resultText);
+      console.log("✅ Raw response:", resultText);
 
-    // 🧩 Parse JSON safely
-    let content;
-    try {
-      const clean = resultText.replace(/```json|```/g, "").trim();
-      const jsonMatch = clean.match(/\{[\s\S]*\}/);
-      content = jsonMatch ? JSON.parse(jsonMatch[0]) : generateFallbackContent(topic, platform, style);
-    } catch (err) {
-      console.warn("⚠️ JSON parse failed, using fallback:", err);
-      content = generateFallbackContent(topic, platform, style);
-    }
+      // 🧩 Parse JSON safely
+      let content;
+      try {
+        const clean = resultText.replace(/```json|```/g, "").trim();
+        const jsonMatch = clean.match(/\{[\s\S]*\}/);
+        content = jsonMatch ? JSON.parse(jsonMatch[0]) : generateFallbackContent(topic, platform, style);
+      } catch (err) {
+        console.warn("⚠️ JSON parse failed, using fallback:", err);
+        content = generateFallbackContent(topic, platform, style);
+      }
 
-    if (!Array.isArray(content.hashtags)) content.hashtags = [];
-    if (content.hashtags.length < 3) {
-      const defaults = [topic.split(" ")[0], platform, style, "viral"];
-      content.hashtags = [...content.hashtags, ...defaults].slice(0, 10);
-    }
+      if (!Array.isArray(content.hashtags)) content.hashtags = [];
+      if (content.hashtags.length < 3) {
+        const defaults = [topic.split(" ")[0], platform, style, "viral"];
+        content.hashtags = [...content.hashtags, ...defaults].slice(0, 10);
+      }
 
-    return {
-      ...content,
-      platform,
-      style,
-      topic,
-      timestamp: new Date().toISOString(),
+      return {
+        ...content,
+        platform,
+        style,
+        topic,
+        timestamp: new Date().toISOString(),
+      };
     };
+
+    // 🚀 Execute with rate limiting ONLY if using environment key
+    let result;
+    if (!isUserKey) {
+      console.log('⏳ Queueing request with rate limiter...');
+      result = await rateLimiter.queueRequest(makeApiCall);
+    } else {
+      console.log('🚀 Direct execution (user key - no rate limit)');
+      result = await makeApiCall();
+    }
+
+    return result;
+
   } catch (error) {
     console.error("❌ Generation error:", error);
 
@@ -221,7 +262,9 @@ Return JSON:
     if (error.message === "NEED_API_KEY") throw error;
 
     // UI-friendly error messages
-    if (error.message.includes("quota")) throw new Error("⏰ API quota reached. Resets at midnight PT.");
+    if (error.message.includes("quota") || error.message.includes("limit reached")) {
+      throw new Error(error.message); // Pass through our custom rate limit message
+    }
     if (error.message.includes("invalid")) throw new Error("❌ Invalid API key. Update it in settings.");
     if (error.message.includes("network")) throw new Error("🌐 Network error — check your connection");
     throw new Error(error.message || "❌ Generation failed. Try again.");
@@ -235,7 +278,7 @@ export async function testConnection() {
     const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
     if (!apiKey) return false;
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
     const response = await model.generateContent("Say 'connected'");
     const text = await response.response.text();
     return text.toLowerCase().includes("connect");
