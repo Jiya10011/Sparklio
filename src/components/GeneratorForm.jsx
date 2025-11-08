@@ -6,7 +6,8 @@ import { generateContent } from '../services/geminiService';
 import { generateImage } from '../services/imageService';
 import { getUserApiKey } from '../services/userApiKeyService';
 import ApiKeySetupModal from './ApiKeySetupModal';
-import { LogIn, LogOut, Menu, History, ChevronDown, X, User } from 'lucide-react';
+import { LogIn, LogOut, Menu, History, ChevronDown, X, User, Lightbulb } from 'lucide-react';
+import ContentTemplates from './ContentTemplates';
 
 function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
   // State management
