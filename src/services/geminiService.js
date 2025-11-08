@@ -106,7 +106,11 @@ function validateInput(topic, platform) {
   if (!topic || typeof topic !== "string") throw new Error("Please enter a valid topic");
   const trimmed = topic.trim();
   if (trimmed.length < 5) throw new Error("Topic must be at least 5 characters long");
-  if (trimmed.length > 100) throw new Error("Topic must be under 100 characters");
+  const MAX_TOPIC_LENGTH = 1000;
+
+  if (topic.length > MAX_TOPIC_LENGTH) {
+     throw new Error(`Topic must be under ${MAX_TOPIC_LENGTH} characters`);
+  }
 
   const banned = ["illegal", "hack", "crack", "pirate", "weapon"];
   if (banned.some((k) => trimmed.toLowerCase().includes(k))) throw new Error("Please choose a different topic");
