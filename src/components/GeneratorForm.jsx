@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { auth } from '../config/firebase';
 import { signInWithPopup, signOut } from 'firebase/auth';
 import { googleProvider } from '../config/firebase';
@@ -25,6 +25,7 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
   const [showApiKeyModal, setShowApiKeyModal] = useState(false);
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showTemplates, setShowTemplates] = useState(false); // NEW: Templates modal state
 
   // Trending topics
   const trendingTopics = [
@@ -503,6 +504,17 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
               ))}
             </div>
           </div>
+
+          {/* Browse Templates Button - NEW! */}
+          <button
+            onClick={() => setShowTemplates(true)}
+            disabled={loading || !user}
+            className="mt-4 w-full flex items-center justify-center gap-2 bg-gradient-to-r from-purple-500/20 to-blue-500/20 hover:from-purple-500/30 hover:to-blue-500/30 border border-purple-500/30 text-purple-300 py-3 rounded-xl transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Lightbulb className="w-5 h-5" />
+            <span>Browse Content Templates</span>
+            <span className="text-xs bg-purple-500/30 px-2 py-1 rounded-full">45+ Ideas</span>
+          </button>
         </div>
 
         {/* Platform Selector */}
@@ -658,6 +670,14 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
         onSuccess={handleApiKeySuccess}
       />
 
+      {/* Content Templates Modal - NEW! */}
+      {showTemplates && (
+        <ContentTemplates
+          onSelectTemplate={(prompt) => setTopic(prompt)}
+          onClose={() => setShowTemplates(false)}
+        />
+      )}
+
       <style jsx>{`
         @keyframes slide-in-right {
           from {
@@ -676,4 +696,4 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
   );
 }
 
-export default GeneratorForm
+export default GeneratorForm;
