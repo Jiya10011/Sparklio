@@ -10,8 +10,11 @@ import {
   ChevronLeft,
   ChevronRight,
   History,
-  Link2
+  RotateCw,
+  Loader2
 } from 'lucide-react';
+import { generateContent } from '../services/geminiService';
+import { auth } from '../config/firebase';
 
 function ResultsDisplay({ result, onGenerateNew, onBack, onViewHistory }) {
   const [copiedItem, setCopiedItem] = useState(null);
@@ -19,11 +22,11 @@ function ResultsDisplay({ result, onGenerateNew, onBack, onViewHistory }) {
   const [savedToFavorites, setSavedToFavorites] = useState(false);
   const [currentVariation, setCurrentVariation] = useState(0);
   const [imageLoaded, setImageLoaded] = useState(false);
-  const [showShareModal, setShowShareModal] = useState(false);
-  const [shareUrl, setShareUrl] = useState('');
+  const [variations, setVariations] = useState(result.variations || []);
+  const [regenerating, setRegenerating] = useState(null); // Track which variation is regenerating
 
-  const totalVariations = result.variations?.length || 1;
-  const activeContent = result.variations?.[currentVariation] || result.variations?.[0];
+  const totalVariations = variations.length;
+  const activeContent = variations[currentVariation];
 
   // Smooth entrance animation
   useEffect(() => {
@@ -67,10 +70,9 @@ function ResultsDisplay({ result, onGenerateNew, onBack, onViewHistory }) {
     }
   };
 
-  // Enhanced Share functionality
+  // Share functionality
   const handleShare = async () => {
     const shareText = `${activeContent.hook}\n\n${activeContent.caption}`;
-    
     if (navigator.share) {
       try {
         await navigator.share({
@@ -80,54 +82,23 @@ function ResultsDisplay({ result, onGenerateNew, onBack, onViewHistory }) {
         });
       } catch (error) {
         if (error.name !== 'AbortError') {
-          console.log('Share cancelled or failed, showing modal');
-          setShowShareModal(true);
+          copyToClipboard(shareText, 'share');
         }
       }
     } else {
-      setShowShareModal(true);
+      copyToClipboard(shareText, 'share');
     }
-  };
-
-  // Generate shareable link (simulated)
-  const generateShareLink = () => {
-    // In a real app, you'd save this to a database and generate a unique URL
-    const encodedData = btoa(JSON.stringify({
-      topic: result.topic,
-      platform: result.platform,
-      variation: currentVariation
-    }));
-    const url = `${window.location.origin}/shared/${encodedData.slice(0, 12)}`;
-    setShareUrl(url);
-    return url;
-  };
-
-  // Share to specific platforms
-  const shareToTwitter = () => {
-    const text = encodeURIComponent(`${activeContent.hook}\n\nCreated with Sparklio ✨`);
-    window.open(`https://twitter.com/intent/tweet?text=${text}`, '_blank');
-  };
-
-  const shareToLinkedIn = () => {
-    const url = encodeURIComponent(window.location.href);
-    window.open(`https://www.linkedin.com/sharing/share-offsite/?url=${url}`, '_blank');
-  };
-
-  const shareToWhatsApp = () => {
-    const text = encodeURIComponent(`${activeContent.hook}\n\n${activeContent.caption}\n\nCreated with Sparklio ✨`);
-    window.open(`https://wa.me/?text=${text}`, '_blank');
-  };
-
-  const copyShareLink = () => {
-    const link = generateShareLink();
-    copyToClipboard(link, 'sharelink');
   };
 
   // Save to favorites
   const saveToFavorites = () => {
     try {
       const favorites = JSON.parse(localStorage.getItem('sparklio-favorites') || '[]');
-      favorites.unshift(result);
+      favorites.unshift({
+        ...result,
+        variations: variations, // Save updated variations
+        savedAt: new Date().toISOString()
+      });
       localStorage.setItem('sparklio-favorites', JSON.stringify(favorites.slice(0, 20)));
       setSavedToFavorites(true);
       setTimeout(() => setSavedToFavorites(false), 2000);
@@ -144,6 +115,89 @@ function ResultsDisplay({ result, onGenerateNew, onBack, onViewHistory }) {
   const prevVariation = () => {
     setCurrentVariation(prev => (prev - 1 + totalVariations) % totalVariations);
   };
+
+  // 🔄 NEW: Regenerate Single Variation
+  const handleRegenerateVariation = async (variationIndex) => {
+    setRegenerating(variationIndex);
+    
+    try {
+      console.log(`🔄 Regenerating variation ${variationIndex + 1}...`);
+      
+      // Get current user
+      const user = auth.currentUser;
+      if (!user) {
+        alert('Please sign in to regenerate content');
+        setRegenerating(null);
+        return;
+      }
+
+      // Generate new content with same parameters
+      const newContent = await generateContent(
+        result.topic,
+        result.platform,
+        result.style,
+        result.youtubeType,
+        user.uid
+      );
+
+      // Update the variations array
+      const updatedVariations = [...variations];
+      updatedVariations[variationIndex] = {
+        ...newContent,
+        id: `variation-${variationIndex + 1}`,
+        variationNumber: variationIndex + 1
+      };
+
+      setVariations(updatedVariations);
+      
+      console.log('✅ Variation regenerated successfully');
+      
+      // Show success feedback
+      setCopiedItem(`regenerated-${variationIndex}`);
+      setTimeout(() => setCopiedItem(null), 2000);
+
+    } catch (error) {
+      console.error('❌ Regeneration failed:', error);
+      alert(error.message || 'Failed to regenerate. Please try again.');
+    } finally {
+      setRegenerating(null);
+    }
+  };
+
+  // Calculate character counts for current variation
+  const getCharacterCounts = () => {
+    if (!activeContent) return { hook: 0, caption: 0, hashtags: 0, total: 0, words: 0 };
+    
+    const hookChars = activeContent.hook?.length || 0;
+    const captionChars = activeContent.caption?.length || 0;
+    const hashtagsText = activeContent.hashtags?.map(tag => `#${tag}`).join(' ') || '';
+    const hashtagsChars = hashtagsText.length;
+    const totalChars = hookChars + captionChars + hashtagsChars + 4; // +4 for line breaks
+    
+    // Count words (approximate)
+    const words = activeContent.caption?.split(/\s+/).length || 0;
+    
+    return {
+      hook: hookChars,
+      caption: captionChars,
+      hashtags: hashtagsChars,
+      total: totalChars,
+      words: words
+    };
+  };
+
+  const charCounts = getCharacterCounts();
+
+  // Platform limits
+  const platformLimits = {
+    instagram: { caption: 2200, total: 2200 },
+    twitter: { caption: 280, total: 280 },
+    linkedin: { caption: 3000, total: 3000 },
+    youtube: { caption: 5000, total: 5000 }
+  };
+
+  const currentLimit = platformLimits[result.platform];
+  const isOverLimit = charCounts.total > currentLimit.total;
 
   return (
     <div className="min-h-screen bg-dark-bg relative overflow-hidden">
@@ -258,8 +312,95 @@ function ResultsDisplay({ result, onGenerateNew, onBack, onViewHistory }) {
                 <ChevronRight className="w-6 h-6 text-white" />
               </button>
             </div>
+
+            {/* 🔄 NEW: Regenerate Button for Current Variation */}
+            <div className="mt-4 pt-4 border-t border-gray-700">
+              <button
+                onClick={() => handleRegenerateVariation(currentVariation)}
+                disabled={regenerating === currentVariation}
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/30 text-purple-300 rounded-xl transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {regenerating === currentVariation ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    <span>Regenerating Variation {currentVariation + 1}...</span>
+                  </>
+                ) : copiedItem === `regenerated-${currentVariation}` ? (
+                  <>
+                    <CheckCircle2 className="w-5 h-5" />
+                    <span>Regenerated Successfully!</span>
+                  </>
+                ) : (
+                  <>
+                    <RotateCw className="w-5 h-5" />
+                    <span>Regenerate This Variation</span>
+                  </>
+                )}
+              </button>
+              <p className="text-xs text-gray-500 text-center mt-2">
+                💡 Don't like this variation? Regenerate just this one without affecting others
+              </p>
+            </div>
           </div>
         )}
+
+        {/* 📏 NEW: Character Count Card */}
+        <div className="mb-6 bg-gradient-to-br from-blue-500/10 to-blue-500/5 backdrop-blur-xl rounded-2xl p-6 border border-blue-500/30 shadow-xl">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-bold text-white flex items-center gap-2">
+              📏 Character Count
+            </h3>
+            <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+              isOverLimit 
+                ? 'bg-red-500/20 text-red-400 border border-red-500/30' 
+                : 'bg-green-500/20 text-green-400 border border-green-500/30'
+            }`}>
+              {isOverLimit ? '⚠️ Over Limit' : '✅ Within Limit'}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="bg-gray-800/50 rounded-lg p-4">
+              <p className="text-xs text-gray-400 mb-1">Hook</p>
+              <p className="text-2xl font-bold text-white">{charCounts.hook}</p>
+              <p className="text-xs text-gray-500 mt-1">{activeContent.hook?.split(' ').length || 0} words</p>
+            </div>
+
+            <div className="bg-gray-800/50 rounded-lg p-4">
+              <p className="text-xs text-gray-400 mb-1">Caption</p>
+              <p className="text-2xl font-bold text-white">{charCounts.caption}</p>
+              <p className="text-xs text-gray-500 mt-1">{charCounts.words} words</p>
+            </div>
+
+            <div className="bg-gray-800/50 rounded-lg p-4">
+              <p className="text-xs text-gray-400 mb-1">Hashtags</p>
+              <p className="text-2xl font-bold text-white">{charCounts.hashtags}</p>
+              <p className="text-xs text-gray-500 mt-1">{activeContent.hashtags?.length || 0} tags</p>
+            </div>
+
+            <div className="bg-gray-800/50 rounded-lg p-4">
+              <p className="text-xs text-gray-400 mb-1">Total</p>
+              <p className={`text-2xl font-bold ${isOverLimit ? 'text-red-400' : 'text-green-400'}`}>
+                {charCounts.total}
+              </p>
+              <p className="text-xs text-gray-500 mt-1">
+                Limit: {currentLimit.total}
+              </p>
+            </div>
+          </div>
+
+          {/* Platform-specific info */}
+          <div className="mt-4 p-3 bg-gray-800/30 rounded-lg">
+            <p className="text-xs text-gray-400">
+              <strong className="text-white capitalize">{result.platform}</strong> limit: {currentLimit.total} characters
+              {isOverLimit && (
+                <span className="text-red-400 ml-2">
+                  • You're {charCounts.total - currentLimit.total} characters over
+                </span>
+              )}
+            </p>
+          </div>
+        </div>
 
         {/* Quick Actions Bar */}
         <div className="mb-6 flex flex-wrap gap-3 justify-center">
@@ -325,7 +466,6 @@ function ResultsDisplay({ result, onGenerateNew, onBack, onViewHistory }) {
               </div>
 
               <div className="relative group">
-                {/* Loading State */}
                 {!imageLoaded && (
                   <div className="absolute inset-0 flex items-center justify-center bg-gray-900/50 rounded-xl">
                     <div className="text-center">
@@ -335,7 +475,6 @@ function ResultsDisplay({ result, onGenerateNew, onBack, onViewHistory }) {
                   </div>
                 )}
 
-                {/* Actual Image */}
                 <img
                   src={result.imageUrl}
                   alt="Generated content visual"
@@ -351,7 +490,6 @@ function ResultsDisplay({ result, onGenerateNew, onBack, onViewHistory }) {
                   }}
                 />
 
-                {/* Hover Overlay */}
                 <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl flex items-center justify-center">
                   <button
                     onClick={handleDownloadImage}
@@ -363,7 +501,6 @@ function ResultsDisplay({ result, onGenerateNew, onBack, onViewHistory }) {
                 </div>
               </div>
 
-              {/* Image Info */}
               <div className="mt-3 flex items-center justify-between text-xs text-gray-500">
                 <span>1080 x 1080 px</span>
                 <span>Optimized for {result.platform}</span>
@@ -429,6 +566,7 @@ function ResultsDisplay({ result, onGenerateNew, onBack, onViewHistory }) {
                 </button>
               </div>
               <p className="text-white text-lg leading-relaxed font-medium">{activeContent.hook}</p>
+              <p className="text-xs text-gray-400 mt-2">{charCounts.hook} characters</p>
             </div>
 
             {/* Caption */}
@@ -456,6 +594,7 @@ function ResultsDisplay({ result, onGenerateNew, onBack, onViewHistory }) {
                 </button>
               </div>
               <p className="text-white leading-relaxed whitespace-pre-wrap">{activeContent.caption}</p>
+              <p className="text-xs text-gray-400 mt-2">{charCounts.caption} characters • {charCounts.words} words</p>
             </div>
 
             {/* Hashtags */}
@@ -494,78 +633,11 @@ function ResultsDisplay({ result, onGenerateNew, onBack, onViewHistory }) {
                   </span>
                 ))}
               </div>
+              <p className="text-xs text-gray-400 mt-3">{charCounts.hashtags} characters • {activeContent.hashtags.length} tags</p>
             </div>
           </div>
         </div>
       </div>
-
-      {/* Share Modal */}
-      {showShareModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-8 max-w-md w-full shadow-2xl">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="text-2xl font-bold text-white flex items-center gap-2">
-                <Share2 className="w-6 h-6 text-spark-orange" />
-                Share Content
-              </h3>
-              <button
-                onClick={() => setShowShareModal(false)}
-                className="text-gray-400 hover:text-white text-2xl"
-              >
-                ×
-              </button>
-            </div>
-
-            {/* Share Options */}
-            <div className="space-y-3 mb-6">
-              <button
-                onClick={shareToTwitter}
-                className="w-full flex items-center gap-3 p-4 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 rounded-xl transition-all"
-              >
-                <span className="text-2xl">🐦</span>
-                <span className="text-white font-medium">Share on Twitter</span>
-              </button>
-
-              <button
-                onClick={shareToLinkedIn}
-                className="w-full flex items-center gap-3 p-4 bg-blue-600/10 hover:bg-blue-600/20 border border-blue-600/30 rounded-xl transition-all"
-              >
-                <span className="text-2xl">💼</span>
-                <span className="text-white font-medium">Share on LinkedIn</span>
-              </button>
-
-              <button
-                onClick={shareToWhatsApp}
-                className="w-full flex items-center gap-3 p-4 bg-green-500/10 hover:bg-green-500/20 border border-green-500/30 rounded-xl transition-all"
-              >
-                <span className="text-2xl">💬</span>
-                <span className="text-white font-medium">Share on WhatsApp</span>
-              </button>
-            </div>
-
-            {/* Copy Link */}
-            <div className="border-t border-gray-700 pt-6">
-              <p className="text-gray-400 text-sm mb-3">Or copy link</p>
-              <button
-                onClick={copyShareLink}
-                className="w-full flex items-center justify-center gap-2 p-4 bg-gray-800 hover:bg-gray-700 rounded-xl transition-all"
-              >
-                {copiedItem === 'sharelink' ? (
-                  <>
-                    <CheckCircle2 className="w-5 h-5 text-green-400" />
-                    <span className="text-green-400 font-medium">Link Copied!</span>
-                  </>
-                ) : (
-                  <>
-                    <Link2 className="w-5 h-5 text-white" />
-                    <span className="text-white font-medium">Copy Share Link</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
