@@ -3,40 +3,67 @@ import { useState, useEffect } from 'react';
 import { X, TrendingUp, Clock, Calendar, Zap, AlertCircle } from 'lucide-react';
 
 function ApiUsageDashboard({ onClose }) {
-  const [stats, setStats] = useState(null);
+  const [stats, setStats] = useState({
+    perMinute: { used: 0, limit: 50, remaining: 50 },
+    daily: { used: 0, limit: 1400, remaining: 1400, percentage: 0 }
+  });
 
   useEffect(() => {
     const updateStats = () => {
       try {
-        // Import rateLimiter dynamically to avoid issues
-        import('../services/rateLimiter').then(({ rateLimiter }) => {
-          const newStats = rateLimiter.getUsageStats();
-          console.log('📊 Dashboard stats updated:', newStats);
-          setStats(newStats);
-        }).catch(error => {
-          console.error('❌ Failed to import rateLimiter:', error);
-          // Provide fallback stats
-          setStats({
-            perMinute: { used: 0, limit: 50, remaining: 50 },
-            daily: { used: 0, limit: 1400, remaining: 1400, percentage: 0 }
-          });
-        });
+        // Get today's date
+        const today = new Date().toDateString();
+        
+        // Get stored count from localStorage
+        const storedData = localStorage.getItem('api-daily-count');
+        
+        let dailyUsed = 0;
+        
+        if (storedData) {
+          try {
+            const parsed = JSON.parse(storedData);
+            // Check if it's today's data
+            if (parsed.date === today) {
+              dailyUsed = parseInt(parsed.count) || 0;
+            }
+          } catch (e) {
+            console.error('Parse error:', e);
+          }
+        }
+
+        const dailyLimit = 1400;
+        const percentage = Math.round((dailyUsed / dailyLimit) * 100);
+
+        const newStats = {
+          perMinute: {
+            used: 0,
+            limit: 50,
+            remaining: 50
+          },
+          daily: {
+            used: dailyUsed,
+            limit: dailyLimit,
+            remaining: dailyLimit - dailyUsed,
+            percentage: percentage
+          }
+        };
+
+        console.log('📊 Dashboard stats:', newStats);
+        setStats(newStats);
+
       } catch (error) {
-        console.error('❌ Failed to get stats:', error);
-        setStats({
-          perMinute: { used: 0, limit: 50, remaining: 50 },
-          daily: { used: 0, limit: 1400, remaining: 1400, percentage: 0 }
-        });
+        console.error('❌ Stats update error:', error);
       }
     };
 
+    // Update immediately
     updateStats();
+    
+    // Update every 3 seconds
     const interval = setInterval(updateStats, 3000);
 
     return () => clearInterval(interval);
   }, []);
-
-  if (!stats) return null;
 
   const dailyPercentage = stats.daily.percentage;
   const isWarning = dailyPercentage > 70;
@@ -53,6 +80,7 @@ function ApiUsageDashboard({ onClose }) {
       {/* Dashboard Panel */}
       <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
         <div className="bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 rounded-2xl border border-gray-700 shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+          
           {/* Header */}
           <div className="sticky top-0 bg-gray-900/95 backdrop-blur-xl border-b border-gray-700 p-6 flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -74,6 +102,7 @@ function ApiUsageDashboard({ onClose }) {
 
           {/* Content */}
           <div className="p-6 space-y-6">
+            
             {/* Status Banner */}
             {isCritical ? (
               <div className="bg-gradient-to-r from-red-500/20 to-red-600/20 border border-red-500/30 rounded-xl p-4 flex items-start gap-3">
@@ -109,6 +138,7 @@ function ApiUsageDashboard({ onClose }) {
 
             {/* Main Stats Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              
               {/* Daily Usage Card */}
               <div className="bg-gradient-to-br from-gray-800/80 to-gray-800/40 border border-gray-700 rounded-xl p-6">
                 <div className="flex items-center gap-3 mb-4">
@@ -182,30 +212,15 @@ function ApiUsageDashboard({ onClose }) {
                     <Clock className="w-5 h-5 text-blue-400" />
                   </div>
                   <div>
-                    <p className="text-xs text-gray-400 uppercase tracking-wide">Per Minute</p>
-                    <p className="text-2xl font-bold text-white">{stats.perMinute.used}</p>
+                    <p className="text-xs text-gray-400 uppercase tracking-wide">Rate Limit</p>
+                    <p className="text-2xl font-bold text-white">{stats.perMinute.limit}/min</p>
                   </div>
                 </div>
 
-                {/* Bar Graph */}
-                <div className="mb-4">
-                  <div className="flex items-end justify-between h-32 gap-2">
-                    {Array.from({ length: 10 }).map((_, i) => {
-                      const height = i < stats.perMinute.used ? ((i + 1) / stats.perMinute.limit) * 100 : 0;
-                      return (
-                        <div key={i} className="flex-1 flex flex-col justify-end">
-                          <div 
-                            className={`w-full rounded-t transition-all duration-500 ${
-                              i < stats.perMinute.used 
-                                ? 'bg-gradient-to-t from-blue-500 to-blue-400' 
-                                : 'bg-gray-700'
-                            }`}
-                            style={{ height: height ? `${height}%` : '4px' }}
-                          />
-                        </div>
-                      );
-                    })}
-                  </div>
+                <div className="mb-4 text-center py-8">
+                  <p className="text-gray-400 text-sm mb-2">Requests are rate-limited to</p>
+                  <p className="text-white text-3xl font-bold">{stats.perMinute.limit}</p>
+                  <p className="text-gray-400 text-sm mt-2">per minute</p>
                 </div>
 
                 <div className="space-y-2 text-sm">
@@ -214,12 +229,12 @@ function ApiUsageDashboard({ onClose }) {
                     <span className="text-white font-medium">{stats.perMinute.limit}/min</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-400">Current:</span>
-                    <span className="text-white font-medium">{stats.perMinute.used}/min</span>
+                    <span className="text-gray-400">Per Request:</span>
+                    <span className="text-white font-medium">~1-2 sec</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-400">Available:</span>
-                    <span className="text-white font-medium">{stats.perMinute.remaining}</span>
+                    <span className="text-gray-400">Queue System:</span>
+                    <span className="text-green-400 font-medium">Active ✓</span>
                   </div>
                 </div>
               </div>
@@ -242,7 +257,7 @@ function ApiUsageDashboard({ onClose }) {
                       ? 'bg-gradient-to-r from-yellow-500 to-yellow-600' 
                       : 'bg-gradient-to-r from-spark-orange to-spark-pink'
                   }`}
-                  style={{ width: `${dailyPercentage}%` }}
+                  style={{ width: `${Math.min(dailyPercentage, 100)}%` }}
                 />
               </div>
               <div className="flex justify-between mt-2 text-xs text-gray-500">
@@ -250,6 +265,19 @@ function ApiUsageDashboard({ onClose }) {
                 <span>{stats.daily.limit}</span>
               </div>
             </div>
+
+            {/* Debug Info (only show if used > 0) */}
+            {stats.daily.used > 0 && (
+              <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4">
+                <p className="text-blue-400 font-medium text-sm mb-2">✅ Tracking Active</p>
+                <p className="text-blue-200 text-xs">
+                  Your usage is being tracked. Data refreshes every 3 seconds.
+                </p>
+                <p className="text-gray-500 text-xs mt-2">
+                  Last updated: {new Date().toLocaleTimeString()}
+                </p>
+              </div>
+            )}
 
             {/* Info Box */}
             <div className="bg-gradient-to-r from-purple-500/10 to-blue-500/10 border border-purple-500/30 rounded-xl p-5">
@@ -267,10 +295,25 @@ function ApiUsageDashboard({ onClose }) {
               </a>
             </div>
 
-            {/* Reset Info */}
+            {/* Manual Test Button (for debugging) */}
             <div className="text-center">
-              <p className="text-xs text-gray-500">
-                Daily quota resets at midnight PT (Pacific Time)
+              <button
+                onClick={() => {
+                  const testData = {
+                    date: new Date().toDateString(),
+                    count: stats.daily.used + 5
+                  };
+                  localStorage.setItem('api-daily-count', JSON.stringify(testData));
+                  // Trigger immediate update
+                  window.dispatchEvent(new Event('storage'));
+                  console.log('🧪 Test: Added 5 to count');
+                }}
+                className="text-xs text-gray-500 hover:text-gray-400 transition-colors"
+              >
+                🧪 Test: Add 5 Requests (Debug Only)
+              </button>
+              <p className="text-xs text-gray-600 mt-2">
+                Daily quota resets at midnight PT
               </p>
             </div>
           </div>

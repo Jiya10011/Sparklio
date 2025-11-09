@@ -73,23 +73,32 @@ function ResultsDisplay({ result, onGenerateNew, onBack, onViewHistory }) {
     }
   };
 
-  // Share functionality
+  // Share functionality - SIMPLIFIED
   const handleShare = async () => {
-    const shareText = `${activeContent.hook}\n\n${activeContent.caption}`;
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: 'My Sparklio Content',
-          text: shareText,
-          url: window.location.href
-        });
-      } catch (error) {
-        if (error.name !== 'AbortError') {
-          copyToClipboard(shareText, 'share');
-        }
-      }
-    } else {
-      copyToClipboard(shareText, 'share');
+    // Clean hashtags
+    const cleanHashtags = activeContent.hashtags
+      .map(tag => tag.startsWith('#') ? tag : `#${tag}`)
+      .join(' ');
+    
+    const shareText = `${activeContent.hook}\n\n${activeContent.caption}\n\n${cleanHashtags}`;
+    
+    // Just copy to clipboard - simple and always works
+    try {
+      await navigator.clipboard.writeText(shareText);
+      setCopiedItem('share');
+      setTimeout(() => setCopiedItem(null), 2000);
+      console.log('✅ Content copied to clipboard');
+    } catch (error) {
+      console.error('❌ Copy failed:', error);
+      // Fallback method
+      const textarea = document.createElement('textarea');
+      textarea.value = shareText;
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+      setCopiedItem('share');
+      setTimeout(() => setCopiedItem(null), 2000);
     }
   };
 
@@ -173,8 +182,13 @@ function ResultsDisplay({ result, onGenerateNew, onBack, onViewHistory }) {
     
     const hookChars = activeContent.hook?.length || 0;
     const captionChars = activeContent.caption?.length || 0;
-    const hashtagsText = activeContent.hashtags?.map(tag => `#${tag}`).join(' ') || '';
-    const hashtagsChars = hashtagsText.length;
+    
+    // Clean hashtags to avoid double #
+    const cleanHashtags = activeContent.hashtags
+      ?.map(tag => tag.startsWith('#') ? tag : `#${tag}`)
+      .join(' ') || '';
+    
+    const hashtagsChars = cleanHashtags.length;
     const totalChars = hookChars + captionChars + hashtagsChars + 4; // +4 for line breaks
     
     // Count words (approximate)
@@ -608,9 +622,13 @@ function ResultsDisplay({ result, onGenerateNew, onBack, onViewHistory }) {
                   Hashtags
                 </h3>
                 <button
-                  onClick={() =>
-                    copyToClipboard(activeContent.hashtags.map(tag => `#${tag}`).join(' '), 'hashtags')
-                  }
+                  onClick={() => {
+                    // Clean hashtags before copying
+                    const cleanHashtags = activeContent.hashtags
+                      .map(tag => tag.startsWith('#') ? tag : `#${tag}`)
+                      .join(' ');
+                    copyToClipboard(cleanHashtags, 'hashtags');
+                  }}
                   className="px-3 py-1.5 bg-frame-purple/20 hover:bg-frame-purple/30 text-frame-purple rounded-lg transition-all flex items-center gap-2 text-sm font-medium"
                 >
                   {copiedItem === 'hashtags' ? (

@@ -9,33 +9,51 @@ class RateLimiter {
     this.dailyLimit = 1400; // Stay under 1500 limit
     this.requestTimestamps = [];
     this.dailyCount = this.getDailyCount();
+    
+    console.log('🎯 RateLimiter initialized:', {
+      dailyCount: this.dailyCount,
+      requestsPerMinute: this.requestsPerMinute,
+      dailyLimit: this.dailyLimit
+    });
   }
 
   // Get daily count from localStorage
   getDailyCount() {
-    const today = new Date().toDateString();
-    const stored = localStorage.getItem('api-daily-count');
-    
-    if (stored) {
-      const data = JSON.parse(stored);
-      if (data.date === today) {
-        return data.count;
+    try {
+      const today = new Date().toDateString();
+      const stored = localStorage.getItem('api-daily-count');
+      
+      if (stored) {
+        const data = JSON.parse(stored);
+        if (data.date === today) {
+          console.log('📊 Retrieved daily count:', data.count);
+          return data.count;
+        }
       }
+      
+      // New day, reset count
+      console.log('🆕 New day detected, resetting count');
+      localStorage.setItem('api-daily-count', JSON.stringify({ date: today, count: 0 }));
+      return 0;
+    } catch (error) {
+      console.error('❌ Error getting daily count:', error);
+      return 0;
     }
-    
-    // New day, reset count
-    localStorage.setItem('api-daily-count', JSON.stringify({ date: today, count: 0 }));
-    return 0;
   }
 
   // Update daily count
   updateDailyCount() {
-    const today = new Date().toDateString();
-    this.dailyCount++;
-    localStorage.setItem('api-daily-count', JSON.stringify({ 
-      date: today, 
-      count: this.dailyCount 
-    }));
+    try {
+      const today = new Date().toDateString();
+      this.dailyCount++;
+      localStorage.setItem('api-daily-count', JSON.stringify({ 
+        date: today, 
+        count: this.dailyCount 
+      }));
+      console.log('✅ Daily count updated:', this.dailyCount);
+    } catch (error) {
+      console.error('❌ Error updating daily count:', error);
+    }
   }
 
   // Check if we can make a request
@@ -114,7 +132,7 @@ class RateLimiter {
     const oneMinuteAgo = now - 60000;
     const recentRequests = this.requestTimestamps.filter(t => t > oneMinuteAgo).length;
     
-    return {
+    const stats = {
       perMinute: {
         used: recentRequests,
         limit: this.requestsPerMinute,
@@ -127,8 +145,14 @@ class RateLimiter {
         percentage: Math.round((this.dailyCount / this.dailyLimit) * 100)
       }
     };
+    
+    console.log('📊 Usage stats:', stats);
+    return stats;
   }
 }
 
 // Export singleton instance
 export const rateLimiter = new RateLimiter();
+
+// Also export as default for flexibility
+export default rateLimiter;
