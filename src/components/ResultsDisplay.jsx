@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { generateContent } from '../services/geminiService';
 import { auth } from '../config/firebase';
+import ShareModal from './ShareModal'; // Import ShareModal
 
 function ResultsDisplay({ result, onGenerateNew, onBack, onViewHistory }) {
   const [copiedItem, setCopiedItem] = useState(null);
@@ -23,7 +24,8 @@ function ResultsDisplay({ result, onGenerateNew, onBack, onViewHistory }) {
   const [currentVariation, setCurrentVariation] = useState(0);
   const [imageLoaded, setImageLoaded] = useState(false);
   const [variations, setVariations] = useState(result.variations || []);
-  const [regenerating, setRegenerating] = useState(null); // Track which variation is regenerating
+  const [regenerating, setRegenerating] = useState(null); 
+  const [showShareModal, setShowShareModal] = useState(false); // State for ShareModal
 
   const totalVariations = variations.length;
   const activeContent = variations[currentVariation];
@@ -48,12 +50,10 @@ function ResultsDisplay({ result, onGenerateNew, onBack, onViewHistory }) {
 
   // Copy all content from current variation
   const copyAllContent = () => {
-    // Remove # if already present in hashtags
-    const cleanHashtags = activeContent.hashtags
+    const allText = `${activeContent.hook}\n\n${activeContent.caption}\n\n${activeContent.hashtags
+      // <-- FIX 1: Check for existing #
       .map(tag => tag.startsWith('#') ? tag : `#${tag}`)
-      .join(' ');
-    
-    const allText = `${activeContent.hook}\n\n${activeContent.caption}\n\n${cleanHashtags}`;
+      .join(' ')}`;
     copyToClipboard(allText, 'all');
   };
 
@@ -73,33 +73,9 @@ function ResultsDisplay({ result, onGenerateNew, onBack, onViewHistory }) {
     }
   };
 
-  // Share functionality - SIMPLIFIED
-  const handleShare = async () => {
-    // Clean hashtags
-    const cleanHashtags = activeContent.hashtags
-      .map(tag => tag.startsWith('#') ? tag : `#${tag}`)
-      .join(' ');
-    
-    const shareText = `${activeContent.hook}\n\n${activeContent.caption}\n\n${cleanHashtags}`;
-    
-    // Just copy to clipboard - simple and always works
-    try {
-      await navigator.clipboard.writeText(shareText);
-      setCopiedItem('share');
-      setTimeout(() => setCopiedItem(null), 2000);
-      console.log('✅ Content copied to clipboard');
-    } catch (error) {
-      console.error('❌ Copy failed:', error);
-      // Fallback method
-      const textarea = document.createElement('textarea');
-      textarea.value = shareText;
-      document.body.appendChild(textarea);
-      textarea.select();
-      document.execCommand('copy');
-      document.body.removeChild(textarea);
-      setCopiedItem('share');
-      setTimeout(() => setCopiedItem(null), 2000);
-    }
+  // Updated Share functionality to use the modal
+  const handleShare = () => {
+    setShowShareModal(true);
   };
 
   // Save to favorites
@@ -128,14 +104,13 @@ function ResultsDisplay({ result, onGenerateNew, onBack, onViewHistory }) {
     setCurrentVariation(prev => (prev - 1 + totalVariations) % totalVariations);
   };
 
-  // 🔄 NEW: Regenerate Single Variation
+  // Regenerate Single Variation
   const handleRegenerateVariation = async (variationIndex) => {
     setRegenerating(variationIndex);
     
     try {
       console.log(`🔄 Regenerating variation ${variationIndex + 1}...`);
       
-      // Get current user
       const user = auth.currentUser;
       if (!user) {
         alert('Please sign in to regenerate content');
@@ -143,7 +118,6 @@ function ResultsDisplay({ result, onGenerateNew, onBack, onViewHistory }) {
         return;
       }
 
-      // Generate new content with same parameters
       const newContent = await generateContent(
         result.topic,
         result.platform,
@@ -152,7 +126,6 @@ function ResultsDisplay({ result, onGenerateNew, onBack, onViewHistory }) {
         user.uid
       );
 
-      // Update the variations array
       const updatedVariations = [...variations];
       updatedVariations[variationIndex] = {
         ...newContent,
@@ -164,7 +137,6 @@ function ResultsDisplay({ result, onGenerateNew, onBack, onViewHistory }) {
       
       console.log('✅ Variation regenerated successfully');
       
-      // Show success feedback
       setCopiedItem(`regenerated-${variationIndex}`);
       setTimeout(() => setCopiedItem(null), 2000);
 
@@ -176,23 +148,20 @@ function ResultsDisplay({ result, onGenerateNew, onBack, onViewHistory }) {
     }
   };
 
-  // Calculate character counts for current variation
+  // --- START: Character Count Logic ---
   const getCharacterCounts = () => {
     if (!activeContent) return { hook: 0, caption: 0, hashtags: 0, total: 0, words: 0 };
     
     const hookChars = activeContent.hook?.length || 0;
     const captionChars = activeContent.caption?.length || 0;
+    // <-- FIX 2: Check for existing #
+    const hashtagsText = activeContent.hashtags?.map(tag => tag.startsWith('#') ? tag : `#${tag}`).join(' ') || '';
+    const hashtagsChars = hashtagsText.length;
     
-    // Clean hashtags to avoid double #
-    const cleanHashtags = activeContent.hashtags
-      ?.map(tag => tag.startsWith('#') ? tag : `#${tag}`)
-      .join(' ') || '';
+    // Calculate total. Adding 4 for spacing/newlines.
+    const totalChars = hookChars + captionChars + hashtagsChars + 4; 
     
-    const hashtagsChars = cleanHashtags.length;
-    const totalChars = hookChars + captionChars + hashtagsChars + 4; // +4 for line breaks
-    
-    // Count words (approximate)
-    const words = activeContent.caption?.split(/\s+/).length || 0;
+    const words = activeContent.caption?.split(/\s+/).filter(Boolean).length || 0;
     
     return {
       hook: hookChars,
@@ -205,16 +174,23 @@ function ResultsDisplay({ result, onGenerateNew, onBack, onViewHistory }) {
 
   const charCounts = getCharacterCounts();
 
-  // Platform limits
   const platformLimits = {
     instagram: { caption: 2200, total: 2200 },
-    twitter: { caption: 280, total: 280 },
+    twitter: { caption: 280, total: 280 }, // Using 280 as standard
     linkedin: { caption: 3000, total: 3000 },
     youtube: { caption: 5000, total: 5000 }
   };
+  
+  // Use 200 from your screenshot if platform is twitter
+  const twitterLimit = result.platform === 'twitter' ? 200 : 280;
+  if (result.platform === 'twitter') {
+    platformLimits.twitter.total = twitterLimit;
+  }
 
-  const currentLimit = platformLimits[result.platform];
+  const currentLimit = platformLimits[result.platform] || { total: 2000 };
   const isOverLimit = charCounts.total > currentLimit.total;
+  // --- END: Character Count Logic ---
+
 
   return (
     <div className="min-h-screen bg-dark-bg relative overflow-hidden">
@@ -330,7 +306,7 @@ function ResultsDisplay({ result, onGenerateNew, onBack, onViewHistory }) {
               </button>
             </div>
 
-            {/* 🔄 NEW: Regenerate Button for Current Variation */}
+            {/* Regenerate Button for Current Variation */}
             <div className="mt-4 pt-4 border-t border-gray-700">
               <button
                 onClick={() => handleRegenerateVariation(currentVariation)}
@@ -361,63 +337,61 @@ function ResultsDisplay({ result, onGenerateNew, onBack, onViewHistory }) {
           </div>
         )}
 
-        {/* 📏 NEW: Character Count Card */}
-        <div className="mb-6 bg-gradient-to-br from-blue-500/10 to-blue-500/5 backdrop-blur-xl rounded-2xl p-6 border border-blue-500/30 shadow-xl">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-bold text-white flex items-center gap-2">
-              📏 Character Count
+        {/* --- START: Character Count JSX --- */}
+        <div className="mb-6 bg-dark-surface border border-gray-700 rounded-lg p-6">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+              <span className="text-lg">✏️</span>
+              Character Count
             </h3>
-            <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-              isOverLimit 
-                ? 'bg-red-500/20 text-red-400 border border-red-500/30' 
-                : 'bg-green-500/20 text-green-400 border border-green-500/30'
-            }`}>
-              {isOverLimit ? '⚠️ Over Limit' : '✅ Within Limit'}
-            </span>
+            {isOverLimit && (
+              <div className="flex items-center gap-1.5 bg-red-500/10 text-red-400 px-3 py-1 rounded-full text-sm font-medium border border-red-500/30">
+                <span className="text-base">⚠️</span>
+                Over Limit
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="bg-gray-800/50 rounded-lg p-4">
-              <p className="text-xs text-gray-400 mb-1">Hook</p>
-              <p className="text-2xl font-bold text-white">{charCounts.hook}</p>
-              <p className="text-xs text-gray-500 mt-1">{activeContent.hook?.split(' ').length || 0} words</p>
+              <p className="text-sm text-gray-400 mb-1">Hook</p>
+              <p className="text-3xl font-bold text-white">{charCounts.hook}</p>
+              <p className="text-sm text-gray-500">{activeContent.hook?.split(/\s+/).filter(Boolean).length || 0} words</p>
             </div>
 
             <div className="bg-gray-800/50 rounded-lg p-4">
-              <p className="text-xs text-gray-400 mb-1">Caption</p>
-              <p className="text-2xl font-bold text-white">{charCounts.caption}</p>
-              <p className="text-xs text-gray-500 mt-1">{charCounts.words} words</p>
+              <p className="text-sm text-gray-400 mb-1">Caption</p>
+              <p className="text-3xl font-bold text-white">{charCounts.caption}</p>
+              <p className="text-sm text-gray-500">{charCounts.words} words</p>
             </div>
 
             <div className="bg-gray-800/50 rounded-lg p-4">
-              <p className="text-xs text-gray-400 mb-1">Hashtags</p>
-              <p className="text-2xl font-bold text-white">{charCounts.hashtags}</p>
-              <p className="text-xs text-gray-500 mt-1">{activeContent.hashtags?.length || 0} tags</p>
+              <p className="text-sm text-gray-400 mb-1">Hashtags</p>
+              <p className="text-3xl font-bold text-white">{charCounts.hashtags}</p>
+              <p className="text-sm text-gray-500">{activeContent.hashtags?.length || 0} tags</p>
             </div>
 
             <div className="bg-gray-800/50 rounded-lg p-4">
-              <p className="text-xs text-gray-400 mb-1">Total</p>
-              <p className={`text-2xl font-bold ${isOverLimit ? 'text-red-400' : 'text-green-400'}`}>
+              <p className="text-sm text-gray-400 mb-1">Total</p>
+              <p className={`text-3xl font-bold ${isOverLimit ? 'text-red-500' : 'text-blue-300'}`}>
                 {charCounts.total}
               </p>
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-sm text-gray-500">
                 Limit: {currentLimit.total}
               </p>
             </div>
           </div>
 
-          {/* Platform-specific info */}
-          <div className="mt-4 p-3 bg-gray-800/30 rounded-lg">
-            <p className="text-xs text-gray-400">
-              <strong className="text-white capitalize">{result.platform}</strong> limit: {currentLimit.total} characters
+          <div className="mt-4 bg-gray-800/50 rounded-lg p-3 text-center">
+            <p className="text-sm text-gray-400">
+              <span className="capitalize font-medium text-blue-300">{result.platform}</span> limit: {currentLimit.total} characters
               {isOverLimit && (
-                <span className="text-red-400 ml-2">
-                  • You're {charCounts.total - currentLimit.total} characters over
-                </span>
+                <span className="text-red-400 font-medium"> • You're {charCounts.total - currentLimit.total} characters over</span>
               )}
             </p>
           </div>
         </div>
+        {/* --- END: Character Count JSX --- */}
 
         {/* Quick Actions Bar */}
         <div className="mb-6 flex flex-wrap gap-3 justify-center">
@@ -622,13 +596,10 @@ function ResultsDisplay({ result, onGenerateNew, onBack, onViewHistory }) {
                   Hashtags
                 </h3>
                 <button
-                  onClick={() => {
-                    // Clean hashtags before copying
-                    const cleanHashtags = activeContent.hashtags
-                      .map(tag => tag.startsWith('#') ? tag : `#${tag}`)
-                      .join(' ');
-                    copyToClipboard(cleanHashtags, 'hashtags');
-                  }}
+                  // <-- FIX 3: Check for existing #
+                  onClick={() =>
+                    copyToClipboard(activeContent.hashtags.map(tag => tag.startsWith('#') ? tag : `#${tag}`).join(' '), 'hashtags')
+                  }
                   className="px-3 py-1.5 bg-frame-purple/20 hover:bg-frame-purple/30 text-frame-purple rounded-lg transition-all flex items-center gap-2 text-sm font-medium"
                 >
                   {copiedItem === 'hashtags' ? (
@@ -650,7 +621,8 @@ function ResultsDisplay({ result, onGenerateNew, onBack, onViewHistory }) {
                     key={index}
                     className="px-3 py-1.5 bg-gray-800/50 text-frame-purple rounded-lg text-sm hover:bg-gray-700 transition-all"
                   >
-                    #{tag}
+                    {/* <-- FIX 4: Check for existing # */}
+                    {tag.startsWith('#') ? tag : `#${tag}`}
                   </span>
                 ))}
               </div>
@@ -659,6 +631,14 @@ function ResultsDisplay({ result, onGenerateNew, onBack, onViewHistory }) {
           </div>
         </div>
       </div>
+
+      {/* --- MERGED: Share Modal JSX --- */}
+      {showShareModal && (
+        <ShareModal
+          content={activeContent}
+          onClose={() => setShowShareModal(false)}
+        />
+      )}
     </div>
   );
 }

@@ -6,11 +6,19 @@ import { generateContent } from '../services/geminiService';
 import { generateImage } from '../services/imageService';
 import { getUserApiKey } from '../services/userApiKeyService';
 import ApiKeySetupModal from './ApiKeySetupModal';
-import { LogIn, LogOut, Menu, History, X, User, Lightbulb, BarChart3 } from 'lucide-react';
+import { LogIn, LogOut, Menu, History, ChevronDown, X, User, Lightbulb } from 'lucide-react';
 import ContentTemplates from './ContentTemplates';
-import ApiUsageDashboard from './ApiUsageDashboard';
+import { TrendingUp } from 'lucide-react';
 
-function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
+function GeneratorForm({ 
+  onBack, 
+  onResultsGenerated, 
+  onViewHistory,
+  onOpenDashboard,     // NEW
+  dailyApiUsage,       // NEW
+  incrementApiUsage    // NEW
+}) { 
+  
   // State management
   const [topic, setTopic] = useState('');
   const [platform, setPlatform] = useState('instagram');
@@ -19,6 +27,7 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
   const [loading, setLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState('');
   const [error, setError] = useState(null);
+  const [numVariations, setNumVariations] = useState(3); 
 
   // User & API Key state
   const [user, setUser] = useState(null);
@@ -27,7 +36,6 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
-  const [showUsageDashboard, setShowUsageDashboard] = useState(false);
 
   // Trending topics
   const trendingTopics = [
@@ -63,9 +71,12 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
     { id: 'thumbnail', label: 'Thumbnail Idea', desc: 'Text concepts' }
   ];
 
-  // Character counter
+  // Character counter - 1000 characters
   const characterCount = topic.length;
   const maxCharacters = 1000;
+  
+  // API Cost Calculation
+  const apiCost = numVariations * 5; // 5 requests per variation
 
   // Check auth & API key on mount
   useEffect(() => {
@@ -125,7 +136,7 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
     }
   };
 
-  // Handle content generation
+  // Handle content generation with DYNAMIC variations
   const handleGenerate = async () => {
     setError(null);
 
@@ -150,21 +161,22 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
     }
 
     setLoading(true);
-    console.log('🚀 Starting generation...');
+    console.log(`🚀 Starting generation with ${numVariations} variations...`);
 
     try {
-      setLoadingMessage('🎯 Crafting 5 viral variations...');
-      console.log('📝 Step 1: Generating 5 content variations...');
+      // Generate dynamic number of variations
+      setLoadingMessage(`🎯 Crafting ${numVariations} viral variation${numVariations > 1 ? 's' : ''}...`);
+      console.log(`📝 Step 1: Generating ${numVariations} content variations...`);
 
-      const contentVariations = await Promise.all([
-        generateContent(topic, platform, style, youtubeType, user.uid),
-        generateContent(topic, platform, style, youtubeType, user.uid),
-        generateContent(topic, platform, style, youtubeType, user.uid),
-        generateContent(topic, platform, style, youtubeType, user.uid),
-        generateContent(topic, platform, style, youtubeType, user.uid)
-      ]);
+      const variationPromises = [];
+      for (let i = 0; i < numVariations; i++) {
+        variationPromises.push(
+          generateContent(topic, platform, style, youtubeType, user.uid)
+        );
+      }
 
-      console.log('✅ All 5 variations generated');
+      const contentVariations = await Promise.all(variationPromises);
+      console.log(`✅ All ${numVariations} variations generated`);
       await new Promise(resolve => setTimeout(resolve, 500));
 
       setLoadingMessage('🎨 Generating image concepts...');
@@ -176,6 +188,12 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
 
       setLoadingMessage('✨ Finalizing your content...');
 
+      // Call this *before* saving to history or showing results
+      if (incrementApiUsage) {
+        incrementApiUsage(apiCost);
+        console.log(`📊 API usage incremented by: ${apiCost}`);
+      }
+      
       const result = {
         variations: contentVariations.map((content, index) => ({
           ...content,
@@ -206,7 +224,8 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
       if (error.message === 'NEED_API_KEY') {
         setShowApiKeyModal(true);
         setError('Please add your Gemini API key to continue');
-        return;
+        // Do not increment usage if it failed
+        return; 
       }
 
       setError(error.message || 'Generation failed - please try again');
@@ -270,25 +289,40 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
               SPARKLIO
             </h1>
           </div>
-
-          {/* User Info / Sign In */}
+        
           <div className="flex items-center gap-3">
             {user ? (
-              <button
-                onClick={() => setShowUserMenu(true)}
-                className="flex items-center gap-2 bg-gray-800/50 hover:bg-gray-700/50 px-3 py-2 rounded-lg transition-all"
-              >
-                {user.photoURL ? (
-                  <img
-                    src={user.photoURL}
-                    alt="Profile"
-                    className="w-8 h-8 rounded-full border-2 border-spark-orange"
-                  />
-                ) : (
-                  <User className="w-6 h-6 text-gray-400" />
-                )}
-                <Menu className="w-4 h-4 text-gray-400" />
-              </button>
+              <>
+                <button
+                  onClick={onOpenDashboard}
+                  className="flex items-center gap-2 bg-gray-800/50 hover:bg-gray-700/50 px-3 py-2 rounded-lg transition-all text-sm"
+                  title="View API Usage Dashboard"
+                >
+                  <TrendingUp className="w-4 h-4 text-spark-orange" />
+                  <span className="text-white font-medium">
+                    {dailyApiUsage}
+                  </span>
+                  <span className="text-gray-500">
+                    / 1400
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => setShowUserMenu(true)}
+                  className="flex items-center gap-2 bg-gray-800/50 hover:bg-gray-700/50 px-3 py-2 rounded-lg transition-all"
+                >
+                  {user.photoURL ? (
+                    <img
+                      src={user.photoURL}
+                      alt="Profile"
+                      className="w-8 h-8 rounded-full border-2 border-spark-orange"
+                    />
+                  ) : (
+                    <User className="w-6 h-6 text-gray-400" />
+                  )}
+                  <Menu className="w-4 h-4 text-gray-400" />
+                </button>
+              </>
             ) : (
               <button
                 onClick={handleGoogleSignIn}
@@ -302,7 +336,7 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
         </div>
       </div>
 
-      {/* User Menu Modal */}
+      {/* User Menu Sidebar */}
       {showUserMenu && (
         <>
           <div 
@@ -323,7 +357,7 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
 
             <div className="p-6 border-b border-gray-700">
               <div className="flex items-start gap-4">
-                {user?.photoURL ? (
+                {user.photoURL ? (
                   <img
                     src={user.photoURL}
                     alt="Profile"
@@ -335,8 +369,8 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
                   </div>
                 )}
                 <div className="flex-1 min-w-0">
-                  <p className="text-white font-semibold text-lg truncate">{user?.displayName || 'User'}</p>
-                  <p className="text-gray-400 text-sm truncate">{user?.email}</p>
+                  <p className="text-white font-semibold text-lg truncate">{user.displayName || 'User'}</p>
+                  <p className="text-gray-400 text-sm truncate">{user.email}</p>
                 </div>
               </div>
 
@@ -365,24 +399,8 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
 
             <div className="p-4">
               <button
-                onClick={() => {
-                  setShowUserMenu(false);
-                  setShowUsageDashboard(true);
-                }}
-                className="w-full flex items-center gap-4 px-4 py-4 hover:bg-gray-800 rounded-xl transition-all text-left group"
-              >
-                <div className="w-10 h-10 bg-purple-500/20 rounded-lg flex items-center justify-center group-hover:bg-purple-500/30 transition-colors">
-                  <BarChart3 className="w-5 h-5 text-purple-400" />
-                </div>
-                <div className="flex-1">
-                  <p className="text-white font-medium">API Usage</p>
-                  <p className="text-gray-400 text-xs">Monitor your limits</p>
-                </div>
-              </button>
-
-              <button
                 onClick={handleViewHistory}
-                className="w-full flex items-center gap-4 px-4 py-4 hover:bg-gray-800 rounded-xl transition-all text-left group mt-2"
+                className="w-full flex items-center gap-4 px-4 py-4 hover:bg-gray-800 rounded-xl transition-all text-left group"
               >
                 <div className="w-10 h-10 bg-blue-500/20 rounded-lg flex items-center justify-center group-hover:bg-blue-500/30 transition-colors">
                   <History className="w-5 h-5 text-blue-400" />
@@ -432,7 +450,7 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
 
         {/* Error Message */}
         {error && (
-          <div className="mb-6 bg-red-500/10 border border-red-500/30 rounded-xl p-4 flex items-start gap-3">
+          <div className="mb-6 bg-red-500/10 border border-red-500/30 rounded-xl p-4 flex items-start gap-3 animate-fade-in">
             <span className="text-2xl">⚠️</span>
             <div className="flex-1">
               <p className="text-red-400 font-medium">Error</p>
@@ -628,6 +646,122 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
           </div>
         </div>
 
+        {/* Number of Variations Selector */}
+        <div className="bg-gradient-to-br from-dark-surface/90 to-dark-surface/50 backdrop-blur-xl rounded-2xl p-8 mb-6 border border-spark-orange/20 shadow-2xl">
+          <label className="block text-spark-orange text-sm font-semibold mb-4 uppercase tracking-wider flex items-center gap-2">
+            <span className="text-xl">🎲</span>
+            Number of Variations
+          </label>
+
+          <div className="space-y-6">
+            {/* Slider */}
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-gray-400 text-sm">How many variations do you want?</span>
+                <span className="text-white font-bold text-2xl">{numVariations}</span>
+              </div>
+              
+              <input
+                type="range"
+                min="1"
+                max="10"
+                value={numVariations}
+                onChange={(e) => setNumVariations(parseInt(e.target.value))}
+                disabled={loading}
+                className="w-full h-3 bg-gray-700 rounded-full appearance-none cursor-pointer
+                          disabled:opacity-50 disabled:cursor-not-allowed
+                          [&::-webkit-slider-thumb]:appearance-none
+                          [&::-webkit-slider-thumb]:w-6
+                          [&::-webkit-slider-thumb]:h-6
+                          [&::-webkit-slider-thumb]:rounded-full
+                          [&::-webkit-slider-thumb]:bg-gradient-to-r
+                          [&::-webkit-slider-thumb]:from-spark-orange
+                          [&::-webkit-slider-thumb]:to-spark-pink
+                          [&::-webkit-slider-thumb]:cursor-pointer
+                          [&::-webkit-slider-thumb]:shadow-lg
+                          [&::-webkit-slider-thumb]:hover:scale-110
+                          [&::-webkit-slider-thumb]:transition-transform
+                          [&::-moz-range-thumb]:w-6
+                          [&::-moz-range-thumb]:h-6
+                          [&::-moz-range-thumb]:rounded-full
+                          [&::-moz-range-thumb]:bg-gradient-to-r
+                          [&::-moz-range-thumb]:from-spark-orange
+                          [&::-moz-range-thumb]:to-spark-pink
+                          [&::-moz-range-thumb]:border-0
+                          [&::-moz-range-thumb]:cursor-pointer
+                          [&::-moz-range-thumb]:shadow-lg"
+              />
+              
+              <div className="flex justify-between mt-2 text-xs text-gray-500">
+                <span>1</span>
+                <span>5</span>
+                <span>10</span>
+              </div>
+            </div>
+
+            {/* Quick Select Buttons */}
+            <div className="grid grid-cols-5 gap-2">
+              {[1, 3, 5, 7, 10].map((num) => (
+                <button
+                  key={num}
+                  onClick={() => setNumVariations(num)}
+                  disabled={loading}
+                  className={`p-3 rounded-lg font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
+                    numVariations === num
+                      ? 'bg-gradient-to-r from-spark-orange to-spark-pink text-white shadow-lg scale-105'
+                      : 'bg-gray-800/50 text-gray-400 hover:bg-gray-700/50 hover:text-white'
+                  }`}
+                >
+                  {num}
+                </button>
+              ))}
+            </div>
+
+            {/* Info Box */}
+            <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4">
+              <div className="flex items-start gap-3">
+                <span className="text-2xl">💡</span>
+                <div className="flex-1">
+                  <p className="text-blue-300 text-sm font-medium mb-1">
+                    API Cost: {apiCost} requests
+                  </p>
+                  <p className="text-blue-200 text-xs">
+                    Each variation uses ~5 API requests. Choose wisely based on your daily limit!
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Recommendations */}
+            <div className="grid grid-cols-3 gap-3 text-xs">
+              <div className={`p-3 rounded-lg border ${
+                numVariations <= 3 
+                  ? 'bg-green-500/10 border-green-500/30 text-green-300' 
+                  : 'bg-gray-800/30 border-gray-700 text-gray-500'
+              }`}>
+                <p className="font-medium mb-1">1-3 variations</p>
+                <p>Quick & efficient</p>
+              </div>
+              <div className={`p-3 rounded-lg border ${
+                numVariations >= 4 && numVariations <= 6
+                  ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-300' 
+                  : 'bg-gray-800/30 border-gray-700 text-gray-500'
+              }`}>
+                <p className="font-medium mb-1">4-6 variations</p>
+                <p>Balanced choice</p>
+              </div>
+              <div className={`p-3 rounded-lg border ${
+                numVariations >= 7
+                  ? 'bg-orange-500/10 border-orange-500/30 text-orange-300' 
+                  : 'bg-gray-800/30 border-gray-700 text-gray-500'
+              }`}>
+                <p className="font-medium mb-1">7-10 variations</p>
+                <p>Maximum options</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Generate Button */}
         <div className="relative">
           <div className={`absolute -inset-1 bg-gradient-to-r from-spark-orange via-spark-pink to-frame-purple rounded-xl blur opacity-50 transition duration-1000 ${loading ? 'animate-pulse' : ''}`}></div>
@@ -644,7 +778,7 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
             ) : (
               <>
                 <span className="text-2xl animate-bounce">⚡</span>
-                <span>Generate 5 Variations</span>
+                <span>Generate {numVariations} Variation{numVariations > 1 ? 's' : ''}</span>
                 <span className="text-2xl">✨</span>
               </>
             )}
@@ -664,7 +798,7 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
             )}
           </p>
           <p className="text-gray-600 text-xs mt-2">
-            💡 Up to 1000 characters (≈150-200 words) • Press Enter to generate • 5 variations per generation
+            💡 Up to 1000 characters (≈150-200 words) • Press Enter to generate • {numVariations} variation{numVariations > 1 ? 's' : ''} per generation
           </p>
         </div>
       </div>
@@ -680,18 +814,8 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
       {/* Content Templates Modal */}
       {showTemplates && (
         <ContentTemplates
-          onSelectTemplate={(prompt) => {
-            setTopic(prompt);
-            setShowTemplates(false);
-          }}
+          onSelectTemplate={(prompt) => setTopic(prompt)}
           onClose={() => setShowTemplates(false)}
-        />
-      )}
-
-      {/* API Usage Dashboard Modal */}
-      {showUsageDashboard && (
-        <ApiUsageDashboard
-          onClose={() => setShowUsageDashboard(false)}
         />
       )}
 
