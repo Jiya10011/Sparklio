@@ -48,9 +48,12 @@ function ResultsDisplay({ result, onGenerateNew, onBack, onViewHistory }) {
 
   // Copy all content from current variation
   const copyAllContent = () => {
-    const allText = `${activeContent.hook}\n\n${activeContent.caption}\n\n${activeContent.hashtags
-      .map(tag => `#${tag}`)
-      .join(' ')}`;
+    // Remove # if already present in hashtags
+    const cleanHashtags = activeContent.hashtags
+      .map(tag => tag.startsWith('#') ? tag : `#${tag}`)
+      .join(' ');
+    
+    const allText = `${activeContent.hook}\n\n${activeContent.caption}\n\n${cleanHashtags}`;
     copyToClipboard(allText, 'all');
   };
 

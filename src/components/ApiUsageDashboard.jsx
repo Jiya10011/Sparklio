@@ -1,6 +1,5 @@
 // src/components/ApiUsageDashboard.jsx
 import { useState, useEffect } from 'react';
-import { rateLimiter } from '../services/rateLimiter';
 import { X, TrendingUp, Clock, Calendar, Zap, AlertCircle } from 'lucide-react';
 
 function ApiUsageDashboard({ onClose }) {
@@ -8,7 +7,27 @@ function ApiUsageDashboard({ onClose }) {
 
   useEffect(() => {
     const updateStats = () => {
-      setStats(rateLimiter.getUsageStats());
+      try {
+        // Import rateLimiter dynamically to avoid issues
+        import('../services/rateLimiter').then(({ rateLimiter }) => {
+          const newStats = rateLimiter.getUsageStats();
+          console.log('📊 Dashboard stats updated:', newStats);
+          setStats(newStats);
+        }).catch(error => {
+          console.error('❌ Failed to import rateLimiter:', error);
+          // Provide fallback stats
+          setStats({
+            perMinute: { used: 0, limit: 50, remaining: 50 },
+            daily: { used: 0, limit: 1400, remaining: 1400, percentage: 0 }
+          });
+        });
+      } catch (error) {
+        console.error('❌ Failed to get stats:', error);
+        setStats({
+          perMinute: { used: 0, limit: 50, remaining: 50 },
+          daily: { used: 0, limit: 1400, remaining: 1400, percentage: 0 }
+        });
+      }
     };
 
     updateStats();
