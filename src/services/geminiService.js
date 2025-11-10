@@ -30,8 +30,8 @@ export const generateContent = async (topic, platform, style, youtubeType, userI
     // Call Gemini API
     const response = await fetch(
       // --- THIS IS THE FIX ---
-      // Changed 'gemini-1.5-flash' to 'gemini-pro' which works with v1beta
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`,
+      // Changed 'v1beta' to 'v1' to match the 'gemini-pro' model
+      `https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key=${apiKey}`,
       {
         method: 'POST',
         headers: {
