@@ -1,139 +1,41 @@
 import { useState, useEffect } from 'react';
 import { X, TrendingUp, Clock, Calendar, Zap, AlertCircle } from 'lucide-react';
 
-function ApiUsageDashboard({ onClose }) {
-  const [dailyUsed, setDailyUsed] = useState(0);
-  const [isLoading, setIsLoading] = useState(true);
-  const [lastUpdated, setLastUpdated] = useState(new Date());
+// --- FIX 1: Accept ALL props from GeneratorForm ---
+function ApiUsageDashboard({ isOpen, onClose, usage, limit, onRefresh }) {
+  
+  // --- FIX 2: Use the 'isOpen' prop to control visibility ---
+  if (!isOpen) {
+    return null;
+  }
 
-  // Load usage data
-  const loadUsage = () => {
-    try {
-      console.log('🔍 Loading API usage...');
-      
-      const today = new Date().toDateString();
-      const stored = localStorage.getItem('api-daily-count');
-      
-      console.log('📦 Raw localStorage data:', stored);
-      
-      if (!stored) {
-        console.log('⚠️ No data found, setting to 0');
-        setDailyUsed(0);
-        setIsLoading(false);
-        return;
-      }
+  // --- FIX 3: All internal state, useEffect, and loadUsage() are REMOVED. ---
+  // We will now use the props 'usage' and 'limit' directly.
 
-      try {
-        const parsed = JSON.parse(stored);
-        console.log('📊 Parsed data:', parsed);
-        
-        if (parsed.date === today) {
-          const count = parseInt(parsed.count) || 0;
-          console.log('✅ Today\'s count:', count);
-          setDailyUsed(count);
-        } else {
-          console.log('📅 Data is from different day, resetting to 0');
-          setDailyUsed(0);
-          // Clear old data
-          localStorage.removeItem('api-daily-count');
-        }
-      } catch (parseError) {
-        console.error('❌ Parse error:', parseError);
-        setDailyUsed(0);
-      }
-      
-      setIsLoading(false);
-      setLastUpdated(new Date());
-    } catch (error) {
-      console.error('❌ Load error:', error);
-      setDailyUsed(0);
-      setIsLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    // Load immediately
-    loadUsage();
-    
-    // Reload every 3 seconds
-    const interval = setInterval(() => {
-      console.log('🔄 Auto-refreshing...');
-      loadUsage();
-    }, 3000);
-
-    // Listen for storage changes from other tabs
-    const handleStorageChange = (e) => {
-      if (e.key === 'api-daily-count') {
-        console.log('💾 Storage changed externally, reloading...');
-        loadUsage();
-      }
-    };
-
-    window.addEventListener('storage', handleStorageChange);
-    
-    // Listen for custom event from same tab
-    const handleCustomUpdate = () => {
-      console.log('🔔 Custom update event received');
-      loadUsage();
-    };
-    
-    window.addEventListener('api-usage-updated', handleCustomUpdate);
-    
-    return () => {
-      clearInterval(interval);
-      window.removeEventListener('storage', handleStorageChange);
-      window.removeEventListener('api-usage-updated', handleCustomUpdate);
-    };
-  }, []);
-
-  const dailyLimit = 1400;
+  const dailyLimit = limit;
+  const dailyUsed = usage;
   const percentage = Math.min(Math.round((dailyUsed / dailyLimit) * 100), 100);
   const remaining = Math.max(dailyLimit - dailyUsed, 0);
   const isWarning = percentage > 70;
   const isCritical = percentage > 90;
 
-  // Manual refresh button
-  const handleManualRefresh = () => {
-    console.log('🔄 Manual refresh triggered');
-    loadUsage();
-  };
-
-  // Reset function
-  const handleReset = () => {
-    if (window.confirm('Are you sure you want to reset the counter? This cannot be undone.')) {
-      localStorage.removeItem('api-daily-count');
-      setDailyUsed(0);
-      console.log('🔄 Counter reset');
-    }
-  };
-
-  if (isLoading) {
-    return (
-      <>
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[9998]" onClick={onClose} />
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
-          <div className="bg-gray-900 rounded-2xl p-8 border border-gray-700">
-            <div className="w-12 h-12 border-4 border-spark-orange border-t-transparent rounded-full animate-spin mx-auto"></div>
-            <p className="text-white text-center mt-4">Loading usage data...</p>
-          </div>
-        </div>
-      </>
-    );
-  }
+  // The 'lastUpdated' prop isn't passed, so we'll just use a static string
+  // for the debug panel. You can add this prop later if you wish.
+  const lastUpdated = "Now";
 
   return (
     <>
       {/* Backdrop */}
       <div 
         className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[9998]"
-        onClick={onClose}
+        onClick={onClose} // This was already correct
       />
 
       {/* Dashboard Panel */}
       <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
         <div 
           className="bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 rounded-2xl border border-gray-700 shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
-          onClick={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()} // This was already correct
         >
           
           {/* Header */}
@@ -148,7 +50,7 @@ function ApiUsageDashboard({ onClose }) {
               </div>
             </div>
             <button
-              onClick={onClose}
+              onClick={onClose} // This was already correct
               className="p-2 hover:bg-gray-800 rounded-lg transition-colors"
             >
               <X className="w-6 h-6 text-gray-400" />
@@ -162,19 +64,21 @@ function ApiUsageDashboard({ onClose }) {
             <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4">
               <p className="text-blue-400 font-medium text-sm mb-2 flex items-center gap-2">
                 🔍 Debug Info
+                {/* --- FIX 4: Hook up the 'onRefresh' prop --- */}
                 <button
-                  onClick={handleManualRefresh}
+                  onClick={onRefresh} 
                   className="ml-auto text-xs px-2 py-1 bg-blue-500/20 hover:bg-blue-500/30 rounded transition-all"
                 >
                   🔄 Refresh
                 </button>
               </p>
               <div className="space-y-1 text-xs text-blue-200">
+                {/* --- FIX 5: Use props, not broken state --- */}
                 <p>Current Count: <strong>{dailyUsed}</strong></p>
                 <p>Percentage: <strong>{percentage}%</strong></p>
                 <p>Remaining: <strong>{remaining}</strong></p>
-                <p>Last Updated: <strong>{lastUpdated.toLocaleTimeString()}</strong></p>
-                <p>localStorage Key: <code className="bg-blue-500/20 px-1 rounded">api-daily-count</code></p>
+                <p>Last Updated: <strong>{lastUpdated}</strong></p>
+                <p>localStorage Key: <code className="bg-blue-500/20 px-1 rounded">user-quota-[...uid]</code></p>
               </div>
             </div>
 
@@ -253,21 +157,10 @@ function ApiUsageDashboard({ onClose }) {
               </div>
             </div>
 
-            {/* Action Buttons */}
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                onClick={handleManualRefresh}
-                className="px-4 py-3 bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/30 text-blue-300 rounded-xl transition-all font-medium flex items-center justify-center gap-2"
-              >
-                🔄 Refresh Now
-              </button>
-              <button
-                onClick={handleReset}
-                className="px-4 py-3 bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 text-red-300 rounded-xl transition-all font-medium flex items-center justify-center gap-2"
-              >
-                🗑️ Reset Counter
-              </button>
-            </div>
+            {/* --- FIX 6: Removed broken buttons --- */}
+            {/* The 'Reset' button was tied to the old state. I've removed it */}
+            {/* and the "Troubleshooting" section to prevent confusion. */}
+            {/* The "Refresh" in the debug panel is the only one that works. */}
 
             {/* Get API Key CTA */}
             <div className="bg-gradient-to-r from-purple-500/10 to-blue-500/10 border border-purple-500/30 rounded-xl p-5">
@@ -292,27 +185,10 @@ function ApiUsageDashboard({ onClose }) {
                 <li>✅ Each variation = 5 API requests (content generation)</li>
                 <li>✅ Data stored in browser localStorage</li>
                 <li>✅ Resets daily at midnight (local time)</li>
-                <li>✅ Updates automatically every 3 seconds</li>
+                <li>✅ This panel updates when you open it</li>
                 <li>✅ No server required - all client-side</li>
               </ul>
             </div>
-
-            {/* Troubleshooting */}
-            <details className="bg-gray-800/30 rounded-xl">
-              <summary className="p-4 cursor-pointer text-white font-medium text-sm hover:bg-gray-800/50 transition-all rounded-xl">
-                🔧 Troubleshooting
-              </summary>
-              <div className="p-4 pt-0 space-y-2 text-xs text-gray-400">
-                <p><strong className="text-white">Dashboard not updating?</strong></p>
-                <p>• Click "Refresh Now" button above</p>
-                <p>• Check if localStorage is enabled in your browser</p>
-                <p>• Try clearing browser cache and reload page</p>
-                <p className="mt-3"><strong className="text-white">Counter seems wrong?</strong></p>
-                <p>• Use "Reset Counter" to start fresh</p>
-                <p>• Make sure you're in the same browser/device</p>
-                <p>• Counter resets automatically at midnight</p>
-              </div>
-            </details>
           </div>
         </div>
       </div>

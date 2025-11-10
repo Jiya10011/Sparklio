@@ -1,31 +1,39 @@
-// services/geminiService.js
-
 import { getUserApiKey } from './userApiKeyService';
 
 export const generateContent = async (topic, platform, style, youtubeType, userId) => {
   try {
     console.log('🚀 Starting content generation...');
     
-    // ⚠️ CRITICAL: Get user's personal API key - NO FALLBACK TO SHARED KEY
+    // --- START: HYBRID KEY LOGIC ---
+    let apiKey = null;
     const userApiKey = await getUserApiKey(userId);
     
-    if (!userApiKey.success || !userApiKey.key) {
-      console.error('❌ No API key found for user');
-      throw new Error('NEED_API_KEY');
+    if (userApiKey.success && userApiKey.key) {
+      // 1. User is "Pro" - Use their personal key
+      apiKey = userApiKey.key;
+      console.log('✅ Using user-provided API key.');
+    } else {
+      // 2. User is "Free" - Use the environment key
+      apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+      console.log('✅ Using environment (freemium) API key.');
     }
 
-    const apiKey = userApiKey.key;
-    console.log('✅ Using user API key');
+    if (!apiKey) {
+      console.error('❌ No API key is available. (User has no key AND VITE_GEMINI_API_KEY is not set)');
+      throw new Error('API key configuration error. Please contact support.');
+    }
+    // --- END: HYBRID KEY LOGIC ---
 
-    // Increment API usage counter
-    incrementApiUsage();
+    // ⛔ DELETED: The old incrementApiUsage() function is removed.
+    // Quota is now handled in GeneratorForm.jsx AFTER this function succeeds.
 
     // Build prompt based on platform and style
     const prompt = buildPrompt(topic, platform, style, youtubeType);
 
     // Call Gemini API
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`,
+      // Using 1.5-flash as the standard. Change this if your key requires a different model.
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
       {
         method: 'POST',
         headers: {
@@ -77,40 +85,6 @@ export const generateContent = async (topic, platform, style, youtubeType, userI
   }
 };
 
-// Increment API usage counter
-const incrementApiUsage = () => {
-  try {
-    const today = new Date().toDateString();
-    const stored = localStorage.getItem('api-daily-count');
-    
-    let count = 1;
-    
-    if (stored) {
-      try {
-        const data = JSON.parse(stored);
-        if (data.date === today) {
-          count = (data.count || 0) + 1;
-        }
-      } catch (e) {
-        // ignore parse errors
-      }
-    }
-    
-    localStorage.setItem('api-daily-count', JSON.stringify({
-      date: today,
-      count: count,
-      timestamp: new Date().toISOString()
-    }));
-    
-    // Dispatch custom event for dashboard
-    window.dispatchEvent(new Event('api-usage-updated'));
-    
-    console.log(`📊 API count: ${count}`);
-  } catch (error) {
-    console.warn('⚠️ Failed to update API counter:', error);
-  }
-};
-
 // Build prompt based on parameters
 const buildPrompt = (topic, platform, style, youtubeType) => {
   const basePrompt = `Create engaging ${platform} content about: ${topic}
@@ -133,7 +107,7 @@ CAPTION:
 [Your caption here]
 
 HASHTAGS:
-[hashtag1, hashtag2, hashtag3, etc]
+[#hashtag1, #hashtag2, #hashtag3, etc]
 
 STYLE_PROMPT:
 [Visual description for image generation]`;
@@ -148,9 +122,10 @@ const parseGeneratedContent = (text, platform) => {
   const hashtagsMatch = text.match(/HASHTAGS:\s*\n(.*?)(?=\n\nSTYLE_PROMPT:|STYLE_PROMPT:)/s);
   const stylePromptMatch = text.match(/STYLE_PROMPT:\s*\n(.*?)$/s);
 
-  const hook = hookMatch ? hookMatch[1].trim() : 'No hook generated';
-  const caption = captionMatch ? captionMatch[1].trim() : 'No caption generated';
-  const hashtagsRaw = hashtagsMatch ? hashtagsMatch[1].trim() : '';
+  // Provide defaults in case regex fails
+  const hook = hookMatch ? hookMatch[1].trim() : 'Could not generate hook.';
+  const caption = captionMatch ? captionMatch[1].trim() : text.length > 100 ? text : 'Could not generate caption.';
+  const hashtagsRaw = hashtagsMatch ? hashtagsMatch[1].trim() : '#sparklio #ai';
   const stylePrompt = stylePromptMatch ? stylePromptMatch[1].trim() : 'minimalist design';
 
   // Parse hashtags

@@ -29,7 +29,7 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
   const [showTemplates, setShowTemplates] = useState(false);
   const [showUsageDashboard, setShowUsageDashboard] = useState(false);
   const [numVariations, setNumVariations] = useState(3);
-  const [userQuota, setUserQuota] = useState({ used: 0, limit: 20, allowed: true });
+  const [userQuota, setUserQuota] = useState({ used: 0, limit: 1000, allowed: true });
 
   // Trending topics
   const trendingTopics = [
@@ -71,53 +71,54 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
 
   // Check user's daily quota
   const checkUserQuota = () => {
-    if (!user) return { allowed: true, used: 0, limit: 20 };
+    const currentApiKeyStatus = hasApiKey;
+    const currentLimit = currentApiKeyStatus ? 1000 : 20; 
+
+    if (!user) return { allowed: true, used: 0, limit: currentLimit };
     
     const today = new Date().toDateString();
     const userQuotaKey = `user-quota-${user.uid}`;
     const stored = localStorage.getItem(userQuotaKey);
     
     if (!stored) {
-      return { allowed: true, used: 0, limit: hasApiKey ? 1000 : 20 };
+      return { allowed: true, used: 0, limit: currentLimit };
     }
     
     try {
       const data = JSON.parse(stored);
       
-      // Reset if different day
       if (data.date !== today) {
         localStorage.removeItem(userQuotaKey);
-        return { allowed: true, used: 0, limit: hasApiKey ? 1000 : 20 };
+        return { allowed: true, used: 0, limit: currentLimit };
       }
       
       const used = data.count || 0;
-      const limit = hasApiKey ? 1000 : 20;
       
       return {
-        allowed: used < limit,
+        allowed: used < currentLimit,
         used: used,
-        limit: limit
+        limit: currentLimit
       };
     } catch (e) {
-      return { allowed: true, used: 0, limit: hasApiKey ? 1000 : 20 };
+      return { allowed: true, used: 0, limit: currentLimit };
     }
   };
 
   // Update user quota after generation
-  const updateUserQuota = () => {
+  const updateUserQuota = (costToIncrement) => {
     if (!user) return;
     
     const today = new Date().toDateString();
     const userQuotaKey = `user-quota-${user.uid}`;
     const stored = localStorage.getItem(userQuotaKey);
     
-    let count = 1;
+    let newCount = costToIncrement; 
     
     if (stored) {
       try {
         const data = JSON.parse(stored);
         if (data.date === today) {
-          count = (data.count || 0) + 1;
+          newCount = (data.count || 0) + costToIncrement; 
         }
       } catch (e) {
         // ignore
@@ -126,15 +127,14 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
     
     localStorage.setItem(userQuotaKey, JSON.stringify({
       date: today,
-      count: count,
+      count: newCount, 
       timestamp: new Date().toISOString()
     }));
     
-    // Update state
     setUserQuota(checkUserQuota());
   };
 
-  // Check auth & API key on mount
+  // --- 1. UPDATED: Auth state listener with retry ---
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged(async (currentUser) => {
       setUser(currentUser);
@@ -142,9 +142,24 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
 
       if (currentUser) {
         console.log('✅ User logged in:', currentUser.uid);
-        const keyResult = await getUserApiKey(currentUser.uid);
+        
+        // Check for API key with retry
+        let retries = 3;
+        let keyResult = null;
+        
+        while (retries > 0 && (!keyResult || !keyResult.success)) {
+          keyResult = await getUserApiKey(currentUser.uid);
+          console.log(`🔑 API key check attempt ${4 - retries}:`, keyResult.success);
+          
+          if (!keyResult.success && retries > 1) {
+            // Wait 500ms before retry
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
+          retries--;
+        }
+        
         setHasApiKey(keyResult.success);
-        console.log('🔑 Has API key:', keyResult.success);
+        console.log('🔑 Final API key status:', keyResult.success);
         
         // Check quota
         setUserQuota(checkUserQuota());
@@ -198,12 +213,8 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
       const result = await signInWithPopup(auth, googleProvider);
       console.log('✅ Signed in:', result.user.uid);
       
-      const keyResult = await getUserApiKey(result.user.uid);
-      setHasApiKey(keyResult.success);
+      // Note: The useEffect onAuthStateChanged will handle the API key check
       
-      if (!keyResult.success) {
-        setShowApiKeyModal(true);
-      }
     } catch (error) {
       console.error('❌ Sign in error:', error);
       setError('Failed to sign in. Please try again.');
@@ -231,8 +242,67 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
       onViewHistory();
     }
   };
+  
+  // --- 2. UPDATED: handleApiKeySuccess function ---
+  const handleApiKeySuccess = async () => {
+    console.log('🎉 API key success callback triggered');
+    
+    // Wait a moment for Firebase to propagate
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    // Re-check API key status
+    if (user) {
+      const keyResult = await getUserApiKey(user.uid);
+      console.log('🔄 Re-checking API key:', keyResult.success);
+      setHasApiKey(keyResult.success);
+      
+      if (keyResult.success) {
+        setUserQuota(checkUserQuota());
+        setError(null);
+        console.log('✅ API key confirmed and UI updated');
+      } else {
+        console.error('❌ API key not found after save');
+        setError('API key saved but verification failed. Please refresh the page.');
+      }
+    }
+    
+    setShowApiKeyModal(false);
+  };
 
-  // Handle content generation - UPDATED with quota check
+  // --- 3. ADDED: Manual refresh function ---
+  const handleRefreshApiKeyStatus = async () => {
+    if (!user) return;
+    
+    console.log('🔄 Manually refreshing API key status...');
+    setCheckingAuth(true);
+    
+    try {
+      const keyResult = await getUserApiKey(user.uid);
+      setHasApiKey(keyResult.success);
+      setUserQuota(checkUserQuota());
+      
+      if (keyResult.success) {
+        setError(null);
+        console.log('✅ API key status refreshed successfully');
+      } else {
+        console.log('⚠️ No API key found after refresh');
+      }
+    } catch (error) {
+      console.error('❌ Error refreshing API key:', error);
+    } finally {
+      setCheckingAuth(false);
+    }
+  };
+
+  // Handle Enter key
+  const handleKeyPress = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleGenerate();
+    }
+  };
+
+  // Handle content generation
   const handleGenerate = async () => {
     setError(null);
 
@@ -241,25 +311,14 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
       return;
     }
 
-    // ⚠️ CRITICAL: Check if user has their own API key
-    if (!hasApiKey) {
-      setError('⚠️ Please add your own Gemini API key to continue. This ensures unlimited generations!');
-      setShowApiKeyModal(true);
-      return;
-    }
-
-    // Check quota
     const quota = checkUserQuota();
-    
-    if (!quota.allowed) {
+    const costOfThisGeneration = calculateCost(numVariations);
+
+    if (quota.used + costOfThisGeneration > quota.limit) {
       setError(
-        hasApiKey 
-          ? `Daily limit reached (${quota.used}/${quota.limit}). Please try again tomorrow or check your API key.`
-          : `Daily limit reached (${quota.used}/${quota.limit}). Add your own API key for 1000+ daily generations!`
+        `Daily limit reached. This generation costs ${costOfThisGeneration} requests, but you only have ${quota.limit - quota.used} remaining. Please try again tomorrow or reduce the number of variations.`
       );
-      if (!hasApiKey) {
-        setShowApiKeyModal(true);
-      }
+      setShowUsageDashboard(true); 
       return;
     }
 
@@ -278,11 +337,6 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
       return;
     }
 
-    // Warn if close to limit
-    if (!hasApiKey && quota.used > 15) {
-      console.warn(`⚠️ Warning: ${quota.limit - quota.used} generations remaining today`);
-    }
-
     setLoading(true);
     console.log(`🚀 Starting generation with ${numVariations} variations...`);
 
@@ -290,7 +344,6 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
       setLoadingMessage(`🎯 Crafting ${numVariations} viral variations...`);
       console.log(`📝 Step 1: Generating ${numVariations} content variations...`);
 
-      // Generate the specified number of variations
       const contentVariations = await Promise.all(
         Array.from({ length: numVariations }, () => 
           generateContent(topic, platform, style, youtubeType, user.uid)
@@ -326,8 +379,7 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
 
       saveToHistory(result);
       
-      // Update quota after successful generation
-      updateUserQuota();
+      updateUserQuota(costOfThisGeneration);
       
       console.log('🎉 Generation complete!');
 
@@ -346,10 +398,9 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
         return;
       }
 
-      // Check if it's a quota error
       if (error.message && error.message.includes('quota')) {
-        setError('⚠️ API quota exceeded. Please add your own Gemini API key for unlimited generations!');
-        setShowApiKeyModal(true);
+        setError('⚠️ Your Google API quota was exceeded. Please check your Google account or try again later.');
+        setShowUsageDashboard(true);
         return;
       }
 
@@ -371,22 +422,6 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
       console.log('💾 Saved to history');
     } catch (err) {
       console.warn('⚠️ Failed to save history:', err);
-    }
-  };
-
-  // Handle API key modal success
-  const handleApiKeySuccess = () => {
-    setHasApiKey(true);
-    setShowApiKeyModal(false);
-    setError(null);
-    setUserQuota(checkUserQuota());
-  };
-
-  // Handle Enter key
-  const handleKeyPress = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleGenerate();
     }
   };
 
@@ -632,7 +667,7 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
           </div>
         )}
 
-        {/* API Key Required Warning */}
+        {/* --- 4. UPDATED: API Key Required Warning --- */}
         {user && !hasApiKey && (
           <div className="mb-6 bg-orange-500/10 border-2 border-orange-500/30 rounded-xl p-6 shadow-xl">
             <div className="flex items-start gap-4">
@@ -642,6 +677,26 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
                   <AlertTriangle className="w-6 h-6" />
                   API Key Required
                 </h3>
+                
+                {/* ADDED: Refresh button */}
+                <button
+                  onClick={handleRefreshApiKeyStatus}
+                  disabled={checkingAuth}
+                  className="mb-4 px-4 py-2 bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/30 text-blue-300 rounded-lg text-sm font-medium transition-all disabled:opacity-50 flex items-center gap-2"
+                >
+                  {checkingAuth ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-blue-300 border-t-transparent rounded-full animate-spin"></div>
+                      <span>Checking...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>🔄</span>
+                      <span>I just added my API key - Refresh</span>
+                    </>
+                  )}
+                </button>
+
                 <p className="text-orange-200 text-sm mb-4">
                   To generate content, you need to add your own free Gemini API key. This gives you:
                 </p>
@@ -697,7 +752,7 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
                 <div>
                   <p className="text-green-300 font-medium text-sm">Using Your Personal API Key</p>
                   <p className="text-green-200 text-xs">
-                    {userQuota.used}/{userQuota.limit} generations used today • {userQuota.limit - userQuota.used} remaining
+                    {userQuota.used}/{userQuota.limit} requests used today • {userQuota.limit - userQuota.used} remaining
                   </p>
                 </div>
               </div>
@@ -891,27 +946,27 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
                 onChange={(e) => handleVariationChange(e.target.value)}
                 disabled={loading || !hasApiKey}
                 className="w-full h-3 bg-gray-700 rounded-full appearance-none cursor-pointer
-                           disabled:opacity-50 disabled:cursor-not-allowed
-                           [&::-webkit-slider-thumb]:appearance-none
-                           [&::-webkit-slider-thumb]:w-6
-                           [&::-webkit-slider-thumb]:h-6
-                           [&::-webkit-slider-thumb]:rounded-full
-                           [&::-webkit-slider-thumb]:bg-gradient-to-r
-                           [&::-webkit-slider-thumb]:from-spark-orange
-                           [&::-webkit-slider-thumb]:to-spark-pink
-                           [&::-webkit-slider-thumb]:cursor-pointer
-                           [&::-webkit-slider-thumb]:shadow-lg
-                           [&::-webkit-slider-thumb]:hover:scale-110
-                           [&::-webkit-slider-thumb]:transition-transform
-                           [&::-moz-range-thumb]:w-6
-                           [&::-moz-range-thumb]:h-6
-                           [&::-moz-range-thumb]:rounded-full
-                           [&::-moz-range-thumb]:bg-gradient-to-r
-                           [&::-moz-range-thumb]:from-spark-orange
-                           [&::-moz-range-thumb]:to-spark-pink
-                           [&::-moz-range-thumb]:border-0
-                           [&::-moz-range-thumb]:cursor-pointer
-                           [&::-moz-range-thumb]:shadow-lg"
+                              disabled:opacity-50 disabled:cursor-not-allowed
+                              [&::-webkit-slider-thumb]:appearance-none
+                              [&::-webkit-slider-thumb]:w-6
+                              [&::-webkit-slider-thumb]:h-6
+                              [&::-webkit-slider-thumb]:rounded-full
+                              [&::-webkit-slider-thumb]:bg-gradient-to-r
+                              [&::-webkit-slider-thumb]:from-spark-orange
+                              [&::-webkit-slider-thumb]:to-spark-pink
+                              [&::-webkit-slider-thumb]:cursor-pointer
+                              [&::-webkit-slider-thumb]:shadow-lg
+                              [&::-webkit-slider-thumb]:hover:scale-110
+                              [&::-webkit-slider-thumb]:transition-transform
+                              [&::-moz-range-thumb]:w-6
+                              [&::-moz-range-thumb]:h-6
+                              [&::-moz-range-thumb]:rounded-full
+                              [&::-moz-range-thumb]:bg-gradient-to-r
+                              [&::-moz-range-thumb]:from-spark-orange
+                              [&::-moz-range-thumb]:to-spark-pink
+                              [&::-moz-range-thumb]:border-0
+                              [&::-moz-range-thumb]:cursor-pointer
+                              [&::-moz-range-thumb]:shadow-lg"
               />
               
               <div className="flex justify-between mt-2 text-xs text-gray-500">
@@ -1012,7 +1067,7 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
           <p className="text-gray-500 text-sm flex items-center justify-center gap-2 flex-wrap">
             <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
             {user && hasApiKey ? (
-              <>Using your personal API key • {userQuota.limit - userQuota.used} generations remaining today</>
+              <>Using your personal API key • {Math.max(0, userQuota.limit - userQuota.used)} requests remaining today</>
             ) : user ? (
               <>Add API key for unlimited generations</>
             ) : (
@@ -1045,10 +1100,33 @@ function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
       )}
 
       {/* API Usage Dashboard Modal */}
-      {showUsageDashboard && (
-        <ApiUsageDashboard
-          onClose={() => setShowUsageDashboard(false)}
-        />
+      <ApiUsageDashboard
+        isOpen={showUsageDashboard}
+        onClose={() => setShowUsageDashboard(false)}
+        usage={userQuota.used}
+        limit={userQuota.limit}
+        onRefresh={handleRefreshApiKeyStatus} 
+      />
+
+      {/* --- 5. ADDED: Debug Panel --- */}
+      {process.env.NODE_ENV === 'development' && user && (
+        <div className="mt-6 max-w-4xl mx-auto px-4 py-8">
+          <div className="bg-gray-800/50 border border-gray-700 rounded-xl p-4">
+            <p className="text-xs font-mono text-gray-400 mb-2">🔧 Debug Info:</p>
+            <div className="space-y-1 text-xs font-mono text-gray-500">
+              <p>User ID: {user.uid}</p>
+              <p>Has API Key: {hasApiKey ? '✅ Yes' : '❌ No'}</p>
+              <p>Checking Auth: {checkingAuth ? 'Yes' : 'No'}</p>
+              <p>Quota: {userQuota.used}/{userQuota.limit}</p>
+            </div>
+            <button
+              onClick={handleRefreshApiKeyStatus}
+              className="mt-2 px-3 py-1 bg-blue-500/20 text-blue-300 rounded text-xs"
+            >
+              Force Refresh
+            </button>
+          </div>
+        </div>
       )}
 
       <style jsx>{`
