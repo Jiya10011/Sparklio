@@ -24,16 +24,14 @@ export const generateContent = async (topic, platform, style, youtubeType, userI
     }
     // --- END: HYBRID KEY LOGIC ---
 
-    // ⛔ DELETED: The old incrementApiUsage() function is removed.
-    // Quota is now handled in GeneratorForm.jsx AFTER this function succeeds.
-
     // Build prompt based on platform and style
     const prompt = buildPrompt(topic, platform, style, youtubeType);
 
     // Call Gemini API
     const response = await fetch(
-      // Using 1.5-flash as the standard. Change this if your key requires a different model.
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+      // --- THIS IS THE FIX ---
+      // Changed 'gemini-1.5-flash' to 'gemini-pro' which works with v1beta
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`,
       {
         method: 'POST',
         headers: {
