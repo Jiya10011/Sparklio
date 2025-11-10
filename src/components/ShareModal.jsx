@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { X, Copy, CheckCircle2, Share2 } from 'lucide-react';
+import { X, Copy, CheckCircle2, Share2, MessageCircle, Twitter, Linkedin, Facebook, Send } from 'lucide-react';
 
 function ShareModal({ content, onClose }) {
   const [copied, setCopied] = useState(false);
@@ -11,34 +11,69 @@ function ShareModal({ content, onClose }) {
     .join(' ');
   
   const fullText = `${content.hook}\n\n${content.caption}\n\n${cleanHashtags}`;
-  const shortText = `${content.hook}\n\n${content.caption.slice(0, 200)}...`;
+  const shortText = `${content.hook}\n\n${content.caption.slice(0, 200)}...`; // Truncated for Twitter
 
-  // Share to WhatsApp
-  const shareToWhatsApp = () => {
-    const url = `https://wa.me/?text=${encodeURIComponent(fullText)}`;
-    window.open(url, '_blank', 'width=600,height=700');
-  };
+  // Share options with platform-specific URLs
+  const shareOptions = [
+    {
+      name: 'WhatsApp',
+      icon: MessageCircle,
+      color: 'from-green-500 to-green-600',
+      bgColor: 'bg-green-500/10',
+      borderColor: 'border-green-500/30',
+      action: () => {
+        const url = `https://wa.me/?text=${encodeURIComponent(fullText)}`;
+        window.open(url, '_blank', 'width=600,height=700');
+      }
+    },
+    {
+      name: 'Twitter',
+      icon: Twitter,
+      color: 'from-blue-400 to-blue-500',
+      bgColor: 'bg-blue-400/10',
+      borderColor: 'border-blue-400/30',
+      action: () => {
+        const tweetText = shortText.length > 280 ? shortText.slice(0, 277) + '...' : shortText;
+        const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(tweetText)}`;
+        window.open(url, '_blank', 'width=600,height=700');
+      }
+    },
+    {
+      name: 'LinkedIn',
+      icon: Linkedin,
+      color: 'from-blue-600 to-blue-700',
+      bgColor: 'bg-blue-600/10',
+      borderColor: 'border-blue-600/30',
+      action: () => {
+        const url = `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(window.location.href)}`;
+        window.open(url, '_blank', 'width=600,height=700');
+      }
+    },
+    {
+      name: 'Facebook',
+      icon: Facebook,
+      color: 'from-blue-500 to-blue-600',
+      bgColor: 'bg-blue-500/10',
+      borderColor: 'border-blue-500/30',
+      action: () => {
+        const url = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(window.location.href)}&quote=${encodeURIComponent(fullText)}`;
+        window.open(url, '_blank', 'width=600,height=700');
+      }
+    },
+    {
+      name: 'Telegram',
+      icon: Send,
+      color: 'from-cyan-500 to-cyan-600',
+      bgColor: 'bg-cyan-500/10',
+      borderColor: 'border-cyan-500/30',
+      action: () => {
+        const url = `https://t.me/share/url?url=${encodeURIComponent(window.location.href)}&text=${encodeURIComponent(fullText)}`;
+        window.open(url, '_blank', 'width=600,height=700');
+      }
+    }
+  ];
 
-  // Share to Twitter
-  const shareToTwitter = () => {
-    const tweetText = shortText.length > 280 ? shortText.slice(0, 277) + '...' : shortText;
-    const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(tweetText)}`;
-    window.open(url, '_blank', 'width=600,height=700');
-  };
-
-  // Share to LinkedIn
-  const shareToLinkedIn = () => {
-    const url = `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(window.location.href)}`;
-    window.open(url, '_blank', 'width=600,height=700');
-  };
-
-  // Instagram - Copy with instructions
-  const shareToInstagram = () => {
-    copyToClipboard();
-    alert('Content copied! Open Instagram app and paste it into your post caption.');
-  };
-
-  // Copy to clipboard
+  // Copy to clipboard with fallback
   const copyToClipboard = () => {
     if (navigator.clipboard && window.isSecureContext) {
       navigator.clipboard.writeText(fullText)
@@ -75,7 +110,10 @@ function ShareModal({ content, onClose }) {
 
       {/* Modal */}
       <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4">
-        <div className="bg-gray-900 border border-gray-700 rounded-2xl max-w-md w-full shadow-2xl animate-scale-in">
+        <div 
+          className="bg-gray-900 border border-gray-700 rounded-2xl max-w-md w-full shadow-2xl animate-scale-in"
+          onClick={(e) => e.stopPropagation()}
+        >
           
           {/* Header */}
           <div className="p-6 border-b border-gray-700">
@@ -101,65 +139,22 @@ function ShareModal({ content, onClose }) {
           {/* Share Options */}
           <div className="p-6 space-y-3">
             
-            {/* Instagram */}
-            <button
-              onClick={shareToInstagram}
-              className="w-full flex items-center gap-4 p-4 bg-gradient-to-r from-purple-500/10 to-pink-500/10 hover:from-purple-500/20 hover:to-pink-500/20 border border-purple-500/30 rounded-xl transition-all group"
-            >
-              <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg flex items-center justify-center flex-shrink-0">
-                <span className="text-2xl">📸</span>
-              </div>
-              <div className="flex-1 text-left">
-                <p className="text-white font-medium">Instagram</p>
-                <p className="text-xs text-gray-400">Copy & paste in Instagram app</p>
-              </div>
-              <span className="text-white opacity-0 group-hover:opacity-100 transition-opacity">→</span>
-            </button>
-
-            {/* WhatsApp */}
-            <button
-              onClick={shareToWhatsApp}
-              className="w-full flex items-center gap-4 p-4 bg-green-500/10 hover:bg-green-500/20 border border-green-500/30 rounded-xl transition-all group"
-            >
-              <div className="w-12 h-12 bg-green-500 rounded-lg flex items-center justify-center flex-shrink-0">
-                <span className="text-2xl">💬</span>
-              </div>
-              <div className="flex-1 text-left">
-                <p className="text-white font-medium">WhatsApp</p>
-                <p className="text-xs text-gray-400">Share via WhatsApp</p>
-              </div>
-              <span className="text-white opacity-0 group-hover:opacity-100 transition-opacity">→</span>
-            </button>
-
-            {/* Twitter */}
-            <button
-              onClick={shareToTwitter}
-              className="w-full flex items-center gap-4 p-4 bg-blue-400/10 hover:bg-blue-400/20 border border-blue-400/30 rounded-xl transition-all group"
-            >
-              <div className="w-12 h-12 bg-blue-400 rounded-lg flex items-center justify-center flex-shrink-0">
-                <span className="text-2xl">🐦</span>
-              </div>
-              <div className="flex-1 text-left">
-                <p className="text-white font-medium">Twitter / X</p>
-                <p className="text-xs text-gray-400">Post on Twitter</p>
-              </div>
-              <span className="text-white opacity-0 group-hover:opacity-100 transition-opacity">→</span>
-            </button>
-
-            {/* LinkedIn */}
-            <button
-              onClick={shareToLinkedIn}
-              className="w-full flex items-center gap-4 p-4 bg-blue-600/10 hover:bg-blue-600/20 border border-blue-600/30 rounded-xl transition-all group"
-            >
-              <div className="w-12 h-12 bg-blue-600 rounded-lg flex items-center justify-center flex-shrink-0">
-                <span className="text-2xl">💼</span>
-              </div>
-              <div className="flex-1 text-left">
-                <p className="text-white font-medium">LinkedIn</p>
-                <p className="text-xs text-gray-400">Share professionally</p>
-              </div>
-              <span className="text-white opacity-0 group-hover:opacity-100 transition-opacity">→</span>
-            </button>
+            {shareOptions.map((option) => (
+              <button
+                key={option.name}
+                onClick={option.action}
+                className={`w-full flex items-center gap-4 p-4 ${option.bgColor} hover:opacity-80 border ${option.borderColor} rounded-xl transition-all group`}
+              >
+                <div className={`w-12 h-12 bg-gradient-to-br ${option.color} rounded-lg flex items-center justify-center flex-shrink-0`}>
+                  <option.icon className="w-6 h-6 text-white" />
+                </div>
+                <div className="flex-1 text-left">
+                  <p className="text-white font-medium">{option.name}</p>
+                  <p className="text-xs text-gray-400">Share via {option.name}</p>
+                </div>
+                <span className="text-white opacity-0 group-hover:opacity-100 transition-opacity">→</span>
+              </button>
+            ))}
 
             {/* Copy to Clipboard */}
             <button
@@ -188,7 +183,7 @@ function ShareModal({ content, onClose }) {
           {/* Footer */}
           <div className="p-4 border-t border-gray-700 bg-gray-800/30">
             <p className="text-xs text-gray-500 text-center">
-              💡 Tip: Instagram requires the app - copy and paste there
+              💡 Tip: Choose the platform where your audience is most active
             </p>
           </div>
         </div>

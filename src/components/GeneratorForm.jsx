@@ -6,19 +6,11 @@ import { generateContent } from '../services/geminiService';
 import { generateImage } from '../services/imageService';
 import { getUserApiKey } from '../services/userApiKeyService';
 import ApiKeySetupModal from './ApiKeySetupModal';
-import { LogIn, LogOut, Menu, History, ChevronDown, X, User, Lightbulb } from 'lucide-react';
+import { LogIn, LogOut, Menu, History, X, User, Lightbulb, BarChart3, AlertTriangle } from 'lucide-react';
 import ContentTemplates from './ContentTemplates';
-import { TrendingUp } from 'lucide-react';
+import ApiUsageDashboard from './ApiUsageDashboard';
 
-function GeneratorForm({ 
-  onBack, 
-  onResultsGenerated, 
-  onViewHistory,
-  onOpenDashboard,     // NEW
-  dailyApiUsage,       // NEW
-  incrementApiUsage    // NEW
-}) { 
-  
+function GeneratorForm({ onBack, onResultsGenerated, onViewHistory }) {
   // State management
   const [topic, setTopic] = useState('');
   const [platform, setPlatform] = useState('instagram');
@@ -27,7 +19,6 @@ function GeneratorForm({
   const [loading, setLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState('');
   const [error, setError] = useState(null);
-  const [numVariations, setNumVariations] = useState(3); 
 
   // User & API Key state
   const [user, setUser] = useState(null);
@@ -36,6 +27,9 @@ function GeneratorForm({
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
+  const [showUsageDashboard, setShowUsageDashboard] = useState(false);
+  const [numVariations, setNumVariations] = useState(3);
+  const [userQuota, setUserQuota] = useState({ used: 0, limit: 20, allowed: true });
 
   // Trending topics
   const trendingTopics = [
@@ -71,12 +65,74 @@ function GeneratorForm({
     { id: 'thumbnail', label: 'Thumbnail Idea', desc: 'Text concepts' }
   ];
 
-  // Character counter - 1000 characters
+  // Character counter
   const characterCount = topic.length;
   const maxCharacters = 1000;
-  
-  // API Cost Calculation
-  const apiCost = numVariations * 5; // 5 requests per variation
+
+  // Check user's daily quota
+  const checkUserQuota = () => {
+    if (!user) return { allowed: true, used: 0, limit: 20 };
+    
+    const today = new Date().toDateString();
+    const userQuotaKey = `user-quota-${user.uid}`;
+    const stored = localStorage.getItem(userQuotaKey);
+    
+    if (!stored) {
+      return { allowed: true, used: 0, limit: hasApiKey ? 1000 : 20 };
+    }
+    
+    try {
+      const data = JSON.parse(stored);
+      
+      // Reset if different day
+      if (data.date !== today) {
+        localStorage.removeItem(userQuotaKey);
+        return { allowed: true, used: 0, limit: hasApiKey ? 1000 : 20 };
+      }
+      
+      const used = data.count || 0;
+      const limit = hasApiKey ? 1000 : 20;
+      
+      return {
+        allowed: used < limit,
+        used: used,
+        limit: limit
+      };
+    } catch (e) {
+      return { allowed: true, used: 0, limit: hasApiKey ? 1000 : 20 };
+    }
+  };
+
+  // Update user quota after generation
+  const updateUserQuota = () => {
+    if (!user) return;
+    
+    const today = new Date().toDateString();
+    const userQuotaKey = `user-quota-${user.uid}`;
+    const stored = localStorage.getItem(userQuotaKey);
+    
+    let count = 1;
+    
+    if (stored) {
+      try {
+        const data = JSON.parse(stored);
+        if (data.date === today) {
+          count = (data.count || 0) + 1;
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+    
+    localStorage.setItem(userQuotaKey, JSON.stringify({
+      date: today,
+      count: count,
+      timestamp: new Date().toISOString()
+    }));
+    
+    // Update state
+    setUserQuota(checkUserQuota());
+  };
 
   // Check auth & API key on mount
   useEffect(() => {
@@ -89,11 +145,51 @@ function GeneratorForm({
         const keyResult = await getUserApiKey(currentUser.uid);
         setHasApiKey(keyResult.success);
         console.log('🔑 Has API key:', keyResult.success);
+        
+        // Check quota
+        setUserQuota(checkUserQuota());
       }
     });
 
     return () => unsubscribe();
   }, []);
+
+  // Load saved variations preference
+  useEffect(() => {
+    const saved = localStorage.getItem('preferredVariations');
+    if (saved) {
+      setNumVariations(parseInt(saved, 10));
+    }
+  }, []);
+
+  // Update quota when hasApiKey changes
+  useEffect(() => {
+    if (user) {
+      setUserQuota(checkUserQuota());
+    }
+  }, [hasApiKey, user]);
+
+  // Save variations preference when changed
+  const handleVariationChange = (value) => {
+    const num = parseInt(value, 10);
+    setNumVariations(num);
+    localStorage.setItem('preferredVariations', num.toString());
+  };
+
+  // Calculate cost
+  const calculateCost = (variations) => {
+    const costPerVariation = 5;
+    return variations * costPerVariation;
+  };
+
+  // Get recommendation based on number
+  const getRecommendation = (num) => {
+    if (num <= 3) return { label: 'Quick & Efficient', color: 'text-green-400', icon: '⚡' };
+    if (num <= 6) return { label: 'Balanced Choice', color: 'text-yellow-400', icon: '⚖️' };
+    return { label: 'Maximum Options', color: 'text-orange-400', icon: '🚀' };
+  };
+
+  const recommendation = getRecommendation(numVariations);
 
   // Handle Google Sign In
   const handleGoogleSignIn = async () => {
@@ -136,12 +232,34 @@ function GeneratorForm({
     }
   };
 
-  // Handle content generation with DYNAMIC variations
+  // Handle content generation - UPDATED with quota check
   const handleGenerate = async () => {
     setError(null);
 
     if (!user) {
       setError('Please sign in to generate content');
+      return;
+    }
+
+    // ⚠️ CRITICAL: Check if user has their own API key
+    if (!hasApiKey) {
+      setError('⚠️ Please add your own Gemini API key to continue. This ensures unlimited generations!');
+      setShowApiKeyModal(true);
+      return;
+    }
+
+    // Check quota
+    const quota = checkUserQuota();
+    
+    if (!quota.allowed) {
+      setError(
+        hasApiKey 
+          ? `Daily limit reached (${quota.used}/${quota.limit}). Please try again tomorrow or check your API key.`
+          : `Daily limit reached (${quota.used}/${quota.limit}). Add your own API key for 1000+ daily generations!`
+      );
+      if (!hasApiKey) {
+        setShowApiKeyModal(true);
+      }
       return;
     }
 
@@ -160,22 +278,25 @@ function GeneratorForm({
       return;
     }
 
+    // Warn if close to limit
+    if (!hasApiKey && quota.used > 15) {
+      console.warn(`⚠️ Warning: ${quota.limit - quota.used} generations remaining today`);
+    }
+
     setLoading(true);
     console.log(`🚀 Starting generation with ${numVariations} variations...`);
 
     try {
-      // Generate dynamic number of variations
-      setLoadingMessage(`🎯 Crafting ${numVariations} viral variation${numVariations > 1 ? 's' : ''}...`);
+      setLoadingMessage(`🎯 Crafting ${numVariations} viral variations...`);
       console.log(`📝 Step 1: Generating ${numVariations} content variations...`);
 
-      const variationPromises = [];
-      for (let i = 0; i < numVariations; i++) {
-        variationPromises.push(
+      // Generate the specified number of variations
+      const contentVariations = await Promise.all(
+        Array.from({ length: numVariations }, () => 
           generateContent(topic, platform, style, youtubeType, user.uid)
-        );
-      }
+        )
+      );
 
-      const contentVariations = await Promise.all(variationPromises);
       console.log(`✅ All ${numVariations} variations generated`);
       await new Promise(resolve => setTimeout(resolve, 500));
 
@@ -188,12 +309,6 @@ function GeneratorForm({
 
       setLoadingMessage('✨ Finalizing your content...');
 
-      // Call this *before* saving to history or showing results
-      if (incrementApiUsage) {
-        incrementApiUsage(apiCost);
-        console.log(`📊 API usage incremented by: ${apiCost}`);
-      }
-      
       const result = {
         variations: contentVariations.map((content, index) => ({
           ...content,
@@ -210,6 +325,10 @@ function GeneratorForm({
       };
 
       saveToHistory(result);
+      
+      // Update quota after successful generation
+      updateUserQuota();
+      
       console.log('🎉 Generation complete!');
 
       if (onResultsGenerated) {
@@ -224,8 +343,14 @@ function GeneratorForm({
       if (error.message === 'NEED_API_KEY') {
         setShowApiKeyModal(true);
         setError('Please add your Gemini API key to continue');
-        // Do not increment usage if it failed
-        return; 
+        return;
+      }
+
+      // Check if it's a quota error
+      if (error.message && error.message.includes('quota')) {
+        setError('⚠️ API quota exceeded. Please add your own Gemini API key for unlimited generations!');
+        setShowApiKeyModal(true);
+        return;
       }
 
       setError(error.message || 'Generation failed - please try again');
@@ -254,6 +379,7 @@ function GeneratorForm({
     setHasApiKey(true);
     setShowApiKeyModal(false);
     setError(null);
+    setUserQuota(checkUserQuota());
   };
 
   // Handle Enter key
@@ -289,40 +415,25 @@ function GeneratorForm({
               SPARKLIO
             </h1>
           </div>
-        
+
+          {/* User Info / Sign In */}
           <div className="flex items-center gap-3">
             {user ? (
-              <>
-                <button
-                  onClick={onOpenDashboard}
-                  className="flex items-center gap-2 bg-gray-800/50 hover:bg-gray-700/50 px-3 py-2 rounded-lg transition-all text-sm"
-                  title="View API Usage Dashboard"
-                >
-                  <TrendingUp className="w-4 h-4 text-spark-orange" />
-                  <span className="text-white font-medium">
-                    {dailyApiUsage}
-                  </span>
-                  <span className="text-gray-500">
-                    / 1400
-                  </span>
-                </button>
-
-                <button
-                  onClick={() => setShowUserMenu(true)}
-                  className="flex items-center gap-2 bg-gray-800/50 hover:bg-gray-700/50 px-3 py-2 rounded-lg transition-all"
-                >
-                  {user.photoURL ? (
-                    <img
-                      src={user.photoURL}
-                      alt="Profile"
-                      className="w-8 h-8 rounded-full border-2 border-spark-orange"
-                    />
-                  ) : (
-                    <User className="w-6 h-6 text-gray-400" />
-                  )}
-                  <Menu className="w-4 h-4 text-gray-400" />
-                </button>
-              </>
+              <button
+                onClick={() => setShowUserMenu(true)}
+                className="flex items-center gap-2 bg-gray-800/50 hover:bg-gray-700/50 px-3 py-2 rounded-lg transition-all"
+              >
+                {user.photoURL ? (
+                  <img
+                    src={user.photoURL}
+                    alt="Profile"
+                    className="w-8 h-8 rounded-full border-2 border-spark-orange"
+                  />
+                ) : (
+                  <User className="w-6 h-6 text-gray-400" />
+                )}
+                <Menu className="w-4 h-4 text-gray-400" />
+              </button>
             ) : (
               <button
                 onClick={handleGoogleSignIn}
@@ -336,7 +447,7 @@ function GeneratorForm({
         </div>
       </div>
 
-      {/* User Menu Sidebar */}
+      {/* User Menu Modal */}
       {showUserMenu && (
         <>
           <div 
@@ -357,7 +468,7 @@ function GeneratorForm({
 
             <div className="p-6 border-b border-gray-700">
               <div className="flex items-start gap-4">
-                {user.photoURL ? (
+                {user?.photoURL ? (
                   <img
                     src={user.photoURL}
                     alt="Profile"
@@ -369,8 +480,8 @@ function GeneratorForm({
                   </div>
                 )}
                 <div className="flex-1 min-w-0">
-                  <p className="text-white font-semibold text-lg truncate">{user.displayName || 'User'}</p>
-                  <p className="text-gray-400 text-sm truncate">{user.email}</p>
+                  <p className="text-white font-semibold text-lg truncate">{user?.displayName || 'User'}</p>
+                  <p className="text-gray-400 text-sm truncate">{user?.email}</p>
                 </div>
               </div>
 
@@ -395,12 +506,50 @@ function GeneratorForm({
                   )}
                 </div>
               </div>
+
+              {/* Quota Display */}
+              <div className="mt-3 p-3 bg-gray-800/50 rounded-lg">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm text-gray-400">Today's Usage</span>
+                  <span className="text-sm text-white font-medium">
+                    {userQuota.used}/{userQuota.limit}
+                  </span>
+                </div>
+                <div className="w-full bg-gray-700 rounded-full h-2">
+                  <div 
+                    className={`h-full rounded-full transition-all ${
+                      userQuota.used / userQuota.limit > 0.9 
+                        ? 'bg-red-500' 
+                        : userQuota.used / userQuota.limit > 0.7 
+                        ? 'bg-yellow-500' 
+                        : 'bg-green-500'
+                    }`}
+                    style={{ width: `${Math.min((userQuota.used / userQuota.limit) * 100, 100)}%` }}
+                  />
+                </div>
+              </div>
             </div>
 
             <div className="p-4">
               <button
-                onClick={handleViewHistory}
+                onClick={() => {
+                  setShowUserMenu(false);
+                  setShowUsageDashboard(true);
+                }}
                 className="w-full flex items-center gap-4 px-4 py-4 hover:bg-gray-800 rounded-xl transition-all text-left group"
+              >
+                <div className="w-10 h-10 bg-purple-500/20 rounded-lg flex items-center justify-center group-hover:bg-purple-500/30 transition-colors">
+                  <BarChart3 className="w-5 h-5 text-purple-400" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-white font-medium">API Usage</p>
+                  <p className="text-gray-400 text-xs">Monitor your limits</p>
+                </div>
+              </button>
+
+              <button
+                onClick={handleViewHistory}
+                className="w-full flex items-center gap-4 px-4 py-4 hover:bg-gray-800 rounded-xl transition-all text-left group mt-2"
               >
                 <div className="w-10 h-10 bg-blue-500/20 rounded-lg flex items-center justify-center group-hover:bg-blue-500/30 transition-colors">
                   <History className="w-5 h-5 text-blue-400" />
@@ -450,7 +599,7 @@ function GeneratorForm({
 
         {/* Error Message */}
         {error && (
-          <div className="mb-6 bg-red-500/10 border border-red-500/30 rounded-xl p-4 flex items-start gap-3 animate-fade-in">
+          <div className="mb-6 bg-red-500/10 border border-red-500/30 rounded-xl p-4 flex items-start gap-3">
             <span className="text-2xl">⚠️</span>
             <div className="flex-1">
               <p className="text-red-400 font-medium">Error</p>
@@ -480,6 +629,79 @@ function GeneratorForm({
               <LogIn className="w-5 h-5" />
               Sign In with Google
             </button>
+          </div>
+        )}
+
+        {/* API Key Required Warning */}
+        {user && !hasApiKey && (
+          <div className="mb-6 bg-orange-500/10 border-2 border-orange-500/30 rounded-xl p-6 shadow-xl">
+            <div className="flex items-start gap-4">
+              <div className="text-4xl flex-shrink-0">🔑</div>
+              <div className="flex-1">
+                <h3 className="text-xl font-bold text-orange-400 mb-2 flex items-center gap-2">
+                  <AlertTriangle className="w-6 h-6" />
+                  API Key Required
+                </h3>
+                <p className="text-orange-200 text-sm mb-4">
+                  To generate content, you need to add your own free Gemini API key. This gives you:
+                </p>
+                <ul className="text-orange-200 text-sm space-y-2 mb-4">
+                  <li className="flex items-center gap-2">
+                    <span className="text-green-400">✓</span>
+                    <span><strong>1,500+ free generations</strong> per day</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <span className="text-green-400">✓</span>
+                    <span><strong>Unlimited access</strong> with no sharing</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <span className="text-green-400">✓</span>
+                    <span><strong>100% free</strong> from Google</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <span className="text-green-400">✓</span>
+                    <span>Takes <strong>less than 2 minutes</strong> to set up</span>
+                  </li>
+                </ul>
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    onClick={() => setShowApiKeyModal(true)}
+                    className="bg-gradient-to-r from-spark-orange to-spark-pink px-6 py-3 rounded-lg font-semibold hover:scale-105 transition-transform inline-flex items-center gap-2 shadow-lg"
+                  >
+                    <span>🔑</span>
+                    Add Your API Key
+                  </button>
+                  <a
+                    href="https://aistudio.google.com/app/apikey"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="bg-gray-800 hover:bg-gray-700 px-6 py-3 rounded-lg font-semibold transition-all inline-flex items-center gap-2 text-white border border-gray-700"
+                  >
+                    <span>📖</span>
+                    Get API Key (Free)
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Quota Status for Users with API Key */}
+        {user && hasApiKey && userQuota.used > 0 && (
+          <div className="mb-6 bg-green-500/10 border border-green-500/30 rounded-xl p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-green-500/20 rounded-lg flex items-center justify-center">
+                  <span className="text-xl">✅</span>
+                </div>
+                <div>
+                  <p className="text-green-300 font-medium text-sm">Using Your Personal API Key</p>
+                  <p className="text-green-200 text-xs">
+                    {userQuota.used}/{userQuota.limit} generations used today • {userQuota.limit - userQuota.used} remaining
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
@@ -666,30 +888,30 @@ function GeneratorForm({
                 min="1"
                 max="10"
                 value={numVariations}
-                onChange={(e) => setNumVariations(parseInt(e.target.value))}
-                disabled={loading}
+                onChange={(e) => handleVariationChange(e.target.value)}
+                disabled={loading || !hasApiKey}
                 className="w-full h-3 bg-gray-700 rounded-full appearance-none cursor-pointer
-                          disabled:opacity-50 disabled:cursor-not-allowed
-                          [&::-webkit-slider-thumb]:appearance-none
-                          [&::-webkit-slider-thumb]:w-6
-                          [&::-webkit-slider-thumb]:h-6
-                          [&::-webkit-slider-thumb]:rounded-full
-                          [&::-webkit-slider-thumb]:bg-gradient-to-r
-                          [&::-webkit-slider-thumb]:from-spark-orange
-                          [&::-webkit-slider-thumb]:to-spark-pink
-                          [&::-webkit-slider-thumb]:cursor-pointer
-                          [&::-webkit-slider-thumb]:shadow-lg
-                          [&::-webkit-slider-thumb]:hover:scale-110
-                          [&::-webkit-slider-thumb]:transition-transform
-                          [&::-moz-range-thumb]:w-6
-                          [&::-moz-range-thumb]:h-6
-                          [&::-moz-range-thumb]:rounded-full
-                          [&::-moz-range-thumb]:bg-gradient-to-r
-                          [&::-moz-range-thumb]:from-spark-orange
-                          [&::-moz-range-thumb]:to-spark-pink
-                          [&::-moz-range-thumb]:border-0
-                          [&::-moz-range-thumb]:cursor-pointer
-                          [&::-moz-range-thumb]:shadow-lg"
+                           disabled:opacity-50 disabled:cursor-not-allowed
+                           [&::-webkit-slider-thumb]:appearance-none
+                           [&::-webkit-slider-thumb]:w-6
+                           [&::-webkit-slider-thumb]:h-6
+                           [&::-webkit-slider-thumb]:rounded-full
+                           [&::-webkit-slider-thumb]:bg-gradient-to-r
+                           [&::-webkit-slider-thumb]:from-spark-orange
+                           [&::-webkit-slider-thumb]:to-spark-pink
+                           [&::-webkit-slider-thumb]:cursor-pointer
+                           [&::-webkit-slider-thumb]:shadow-lg
+                           [&::-webkit-slider-thumb]:hover:scale-110
+                           [&::-webkit-slider-thumb]:transition-transform
+                           [&::-moz-range-thumb]:w-6
+                           [&::-moz-range-thumb]:h-6
+                           [&::-moz-range-thumb]:rounded-full
+                           [&::-moz-range-thumb]:bg-gradient-to-r
+                           [&::-moz-range-thumb]:from-spark-orange
+                           [&::-moz-range-thumb]:to-spark-pink
+                           [&::-moz-range-thumb]:border-0
+                           [&::-moz-range-thumb]:cursor-pointer
+                           [&::-moz-range-thumb]:shadow-lg"
               />
               
               <div className="flex justify-between mt-2 text-xs text-gray-500">
@@ -704,8 +926,8 @@ function GeneratorForm({
               {[1, 3, 5, 7, 10].map((num) => (
                 <button
                   key={num}
-                  onClick={() => setNumVariations(num)}
-                  disabled={loading}
+                  onClick={() => handleVariationChange(num)}
+                  disabled={loading || !hasApiKey}
                   className={`p-3 rounded-lg font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
                     numVariations === num
                       ? 'bg-gradient-to-r from-spark-orange to-spark-pink text-white shadow-lg scale-105'
@@ -723,10 +945,10 @@ function GeneratorForm({
                 <span className="text-2xl">💡</span>
                 <div className="flex-1">
                   <p className="text-blue-300 text-sm font-medium mb-1">
-                    API Cost: {apiCost} requests
+                    API Cost: {calculateCost(numVariations)} requests
                   </p>
                   <p className="text-blue-200 text-xs">
-                    Each variation uses ~5 API requests. Choose wisely based on your daily limit!
+                    Each variation uses ~5 API requests. {hasApiKey ? 'With your API key, you have plenty of quota!' : 'Add your API key for unlimited access!'}
                   </p>
                 </div>
               </div>
@@ -767,7 +989,7 @@ function GeneratorForm({
           <div className={`absolute -inset-1 bg-gradient-to-r from-spark-orange via-spark-pink to-frame-purple rounded-xl blur opacity-50 transition duration-1000 ${loading ? 'animate-pulse' : ''}`}></div>
           <button
             onClick={handleGenerate}
-            disabled={loading || !topic.trim() || !user}
+            disabled={loading || !topic.trim() || !user || !hasApiKey}
             className="relative w-full bg-gradient-to-r from-spark-orange via-spark-pink to-frame-purple text-white py-5 rounded-xl font-bold uppercase tracking-wide hover:scale-[1.02] transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-2xl flex items-center justify-center gap-3 text-lg"
           >
             {loading ? (
@@ -787,18 +1009,18 @@ function GeneratorForm({
 
         {/* Info Footer */}
         <div className="mt-6 text-center">
-          <p className="text-gray-500 text-sm flex items-center justify-center gap-2">
+          <p className="text-gray-500 text-sm flex items-center justify-center gap-2 flex-wrap">
             <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
             {user && hasApiKey ? (
-              'Using your personal API key • Unlimited generations'
+              <>Using your personal API key • {userQuota.limit - userQuota.used} generations remaining today</>
             ) : user ? (
-              'Add API key for unlimited generations'
+              <>Add API key for unlimited generations</>
             ) : (
-              'Sign in to start generating'
+              <>Sign in to start generating</>
             )}
           </p>
           <p className="text-gray-600 text-xs mt-2">
-            💡 Up to 1000 characters (≈150-200 words) • Press Enter to generate • {numVariations} variation{numVariations > 1 ? 's' : ''} per generation
+            💡 Up to 1000 characters • Press Enter to generate • {numVariations} variation{numVariations > 1 ? 's' : ''} per generation
           </p>
         </div>
       </div>
@@ -814,8 +1036,18 @@ function GeneratorForm({
       {/* Content Templates Modal */}
       {showTemplates && (
         <ContentTemplates
-          onSelectTemplate={(prompt) => setTopic(prompt)}
+          onSelectTemplate={(prompt) => {
+            setTopic(prompt);
+            setShowTemplates(false);
+          }}
           onClose={() => setShowTemplates(false)}
+        />
+      )}
+
+      {/* API Usage Dashboard Modal */}
+      {showUsageDashboard && (
+        <ApiUsageDashboard
+          onClose={() => setShowUsageDashboard(false)}
         />
       )}
 
